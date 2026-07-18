@@ -121,6 +121,19 @@
     <div class="card hidden" id="panelBuild">
       <div class="h">PORTION CALCULATOR</div>
       <div class="row" style="margin-bottom:8px">
+        <input id="offQ" placeholder="Search any food or brand (3M+ products)" style="flex:1" aria-label="Search food database">
+        <button class="btn" id="offGo">Search</button>
+      </div>
+      <div id="offResults" style="margin-bottom:8px"></div>
+      <div id="offPick" class="hidden" style="margin-bottom:8px">
+        <div class="muted" id="offPickName" style="margin-bottom:6px"></div>
+        <div class="row">
+          <input id="offGrams" type="number" inputmode="decimal" placeholder="grams" aria-label="Grams">
+          <button class="btn" id="offAdd">Add</button>
+        </div>
+      </div>
+      <div class="muted" style="font-weight:700;letter-spacing:1px;font-size:11px;margin-bottom:6px">OR YOUR STAPLES (OFFLINE, USDA)</div>
+      <div class="row" style="margin-bottom:8px">
         <select id="foodSel" style="flex:2"></select>
         <input id="foodQty" type="number" inputmode="decimal" placeholder="qty" style="flex:1" aria-label="Quantity">
         <button class="btn" id="foodAdd">Add</button>
@@ -137,7 +150,7 @@
         <button class="btn full" id="buildLog">Log meal</button>
         <button class="btn ghost" id="buildClear">Clear</button>
       </div>
-      <p class="tiny">USDA-based values. Weigh protein raw? Use the “(raw)” entries. This is more accurate than photo AI.</p>
+      <p class="tiny">Search covers packaged/branded foods with label data (gluten auto-flagged ⚠️ from the label's allergen list). Staples list is USDA-based and works offline. Data: Open Food Facts (ODbL).</p>
     </div>
 
     <!-- MANUAL -->
@@ -356,6 +369,64 @@ document.addEventListener("click",e=>{
   if(del){ meals=meals.filter(m=>m.id!=+del.dataset.del); save(K_TODAY(),meals); renderToday(); }
 });
 
+// ── Open Food Facts search (free, no key) ────────────────────
+let offSelected=null;
+async function searchOFF(q){
+  const url="https://world.openfoodfacts.org/cgi/search.pl?search_terms="+encodeURIComponent(q)
+    +"&search_simple=1&action=process&json=1&page_size=8&fields=product_name,brands,nutriments,allergens_tags";
+  const res=await fetch(url,{headers:{}});
+  if(!res.ok) throw new Error("network");
+  const data=await res.json();
+  // OFF can return 200 with empty/partial data — keep only usable entries
+  return (data.products||[]).filter(p=>{
+    const n=p.nutriments||{};
+    return p.product_name && n["energy-kcal_100g"]!=null && n["proteins_100g"]!=null;
+  }).slice(0,6);
+}
+$("offGo").onclick=async()=>{
+  const q=$("offQ").value.trim(); if(!q) return;
+  $("offResults").innerHTML='<div class="muted">Searching…</div>';
+  $("offPick").classList.add("hidden"); offSelected=null;
+  try{
+    const prods=await searchOFF(q);
+    if(!prods.length){ $("offResults").innerHTML='<div class="muted">No usable results — try a simpler name, or use the staples list below.</div>'; return; }
+    $("offResults").innerHTML=prods.map((p,i)=>{
+      const n=p.nutriments, gl=(p.allergens_tags||[]).includes("en:gluten");
+      return `<button class="fav" data-off="${i}"><b>${gl?"⚠️ ":""}${esc(p.product_name)}${p.brands?` <span class="muted">(${esc(p.brands.split(",")[0])})</span>`:""}</b><small>${Math.round(n["energy-kcal_100g"])} kcal · ${Math.round(n["proteins_100g"])}P /100g</small></button>`;
+    }).join("");
+    $("offResults").dataset.cache=JSON.stringify(prods.map(p=>({
+      name:p.product_name+(p.brands?" ("+p.brands.split(",")[0]+")":""),
+      kcal:+p.nutriments["energy-kcal_100g"]||0,
+      p:+p.nutriments["proteins_100g"]||0,
+      c:+p.nutriments["carbohydrates_100g"]||0,
+      f:+p.nutriments["fat_100g"]||0,
+      gluten:(p.allergens_tags||[]).includes("en:gluten")
+    })));
+  }catch{ $("offResults").innerHTML='<div class="muted">Search needs internet and it seems unavailable right now. The staples list below always works offline.</div>'; }
+};
+$("offQ").addEventListener("keydown",e=>{ if(e.key==="Enter") $("offGo").click(); });
+document.addEventListener("click",e=>{
+  const r=e.target.closest("[data-off]");
+  if(!r) return;
+  const cache=JSON.parse($("offResults").dataset.cache||"[]");
+  offSelected=cache[+r.dataset.off];
+  if(!offSelected) return;
+  $("offPickName").innerHTML=(offSelected.gluten?"⚠️ <b>Contains gluten.</b> ":"")+"Selected: <b>"+esc(offSelected.name)+"</b> — enter grams:";
+  $("offPick").classList.remove("hidden");
+  $("offGrams").focus();
+});
+$("offAdd").onclick=()=>{
+  if(!offSelected) return;
+  const g=parseFloat($("offGrams").value); if(!g||g<=0) return;
+  const m=g/100;
+  build.push({ label:g+"g "+offSelected.name,
+    m:{kcal:offSelected.kcal*m,p:offSelected.p*m,c:offSelected.c*m,f:offSelected.f*m},
+    gluten:offSelected.gluten });
+  $("offGrams").value=""; $("offPick").classList.add("hidden");
+  $("offResults").innerHTML=""; $("offQ").value=""; offSelected=null;
+  renderBuild();
+};
+
 // ── portion builder ──────────────────────────────────────────
 $("foodSel").innerHTML = FOODS.map((f,i)=>`<option value="${i}">${esc(f.n)} (per ${f.per>1?f.per:""}${f.u})</option>`).join("");
 function renderBuild(){
@@ -379,7 +450,8 @@ $("buildClear").onclick=()=>{ build=[]; renderBuild(); };
 $("buildLog").onclick=()=>{
   if(!build.length) return;
   const s=sum(build.map(b=>b.m));
-  logMeal({ name:$("buildName").value||"Built meal", kcal:Math.round(s.kcal), p:Math.round(s.p), c:Math.round(s.c), f:Math.round(s.f) });
+  const hasGluten=build.some(b=>b.gluten);
+  logMeal({ name:$("buildName").value||"Built meal", kcal:Math.round(s.kcal), p:Math.round(s.p), c:Math.round(s.c), f:Math.round(s.f), gluten:hasGluten?"likely":"none" });
   build=[]; $("buildName").value=""; renderBuild();
 };
 
