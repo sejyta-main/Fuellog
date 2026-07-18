@@ -121,7 +121,7 @@
     <div class="card hidden" id="panelBuild">
       <div class="h">PORTION CALCULATOR</div>
       <div class="row" style="margin-bottom:8px">
-        <input id="offQ" placeholder="Search any food or brand (3M+ products)" style="flex:1" aria-label="Search food database">
+        <input id="offQ" placeholder="Type any food/brand — results appear as you type" style="flex:1" aria-label="Search food database">
         <button class="btn" id="offGo">Search</button>
       </div>
       <div id="offResults" style="margin-bottom:8px"></div>
@@ -369,42 +369,92 @@ document.addEventListener("click",e=>{
   if(del){ meals=meals.filter(m=>m.id!=+del.dataset.del); save(K_TODAY(),meals); renderToday(); }
 });
 
-// ── Open Food Facts search (free, no key) ────────────────────
-let offSelected=null;
-async function searchOFF(q){
+// ── food search: typo-tolerant, live, staples + OFF ──────────
+let offSelected=null, searchSeq=0, debTimer=null;
+const norm=s=>s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9\s]/g," ").replace(/\s+/g," ").trim();
+function scoreName(name,qTokens){
+  const nTokens=norm(name).split(" ");
+  let sc=0;
+  for(const q of qTokens){
+    if(nTokens.includes(q)) sc+=3;                                  // exact word
+    else if(nTokens.some(t=>t.startsWith(q))) sc+=2;                // prefix ("yog" → yogurt)
+    else if(q.length>3 && nTokens.some(t=>t.includes(q.slice(0,-1)))) sc+=1; // 1-typo-ish
+  }
+  return sc;
+}
+async function offFetch(q){
   const url="https://world.openfoodfacts.org/cgi/search.pl?search_terms="+encodeURIComponent(q)
-    +"&search_simple=1&action=process&json=1&page_size=8&fields=product_name,brands,nutriments,allergens_tags";
-  const res=await fetch(url,{headers:{}});
+    +"&search_simple=1&action=process&json=1&page_size=24&sort_by=unique_scans_n"
+    +"&fields=product_name,brands,nutriments,allergens_tags,unique_scans_n";
+  const res=await fetch(url);
   if(!res.ok) throw new Error("network");
   const data=await res.json();
-  // OFF can return 200 with empty/partial data — keep only usable entries
   return (data.products||[]).filter(p=>{
     const n=p.nutriments||{};
     return p.product_name && n["energy-kcal_100g"]!=null && n["proteins_100g"]!=null;
-  }).slice(0,6);
+  });
 }
-$("offGo").onclick=async()=>{
-  const q=$("offQ").value.trim(); if(!q) return;
+async function runSearch(qRaw){
+  const seq=++searchSeq;
+  const q=norm(qRaw); if(q.length<3) return;
+  const qTokens=q.split(" ");
+  // local staples in the same box (instant, offline)
+  const localHits=FOODS.map((f,i)=>({i,f,sc:scoreName(f.n,qTokens)}))
+    .filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc).slice(0,3);
   $("offResults").innerHTML='<div class="muted">Searching…</div>';
   $("offPick").classList.add("hidden"); offSelected=null;
+  let prods=[], netFail=false;
   try{
-    const prods=await searchOFF(q);
-    if(!prods.length){ $("offResults").innerHTML='<div class="muted">No usable results — try a simpler name, or use the staples list below.</div>'; return; }
-    $("offResults").innerHTML=prods.map((p,i)=>{
+    // progressive fallback: full phrase → drop last word → first word alone
+    const attempts=[qTokens.join(" ")];
+    if(qTokens.length>1){ attempts.push(qTokens.slice(0,-1).join(" ")); attempts.push(qTokens[0]); }
+    for(const a of attempts){
+      prods=await offFetch(a);
+      if(seq!==searchSeq) return;           // a newer search superseded this one
+      if(prods.length) break;
+    }
+  }catch(err){ if(seq!==searchSeq) return; prods=[]; netFail=true; }
+  if(seq!==searchSeq) return;
+  // re-rank: best name match first, popularity as tiebreak
+  const ranked=prods.map(p=>({p,sc:scoreName(p.product_name+" "+(p.brands||""),qTokens)}))
+    .sort((a,b)=>b.sc-a.sc||((+b.p.unique_scans_n||0)-(+a.p.unique_scans_n||0)))
+    .slice(0,6).map(x=>x.p);
+  let html="";
+  if(localHits.length) html+=localHits.map(x=>
+    `<button class="fav" data-stap="${x.i}"><b>🏠 ${esc(x.f.n)}</b><small>${x.f.kcal} kcal /${x.f.per>1?x.f.per:""}${x.f.u}</small></button>`).join("");
+  if(ranked.length){
+    html+=ranked.map((p,i)=>{
       const n=p.nutriments, gl=(p.allergens_tags||[]).includes("en:gluten");
-      return `<button class="fav" data-off="${i}"><b>${gl?"⚠️ ":""}${esc(p.product_name)}${p.brands?` <span class="muted">(${esc(p.brands.split(",")[0])})</span>`:""}</b><small>${Math.round(n["energy-kcal_100g"])} kcal · ${Math.round(n["proteins_100g"])}P /100g</small></button>`;
+      return `<button class="fav" data-off="${i}"><b>${gl?"⚠️ ":""}${esc(p.product_name)}${p.brands?` <span class="muted">(${esc(String(p.brands).split(",")[0])})</span>`:""}</b><small>${Math.round(n["energy-kcal_100g"])} kcal · ${Math.round(n["proteins_100g"])}P /100g</small></button>`;
     }).join("");
-    $("offResults").dataset.cache=JSON.stringify(prods.map(p=>({
-      name:p.product_name+(p.brands?" ("+p.brands.split(",")[0]+")":""),
+    $("offResults").dataset.cache=JSON.stringify(ranked.map(p=>({
+      name:p.product_name+(p.brands?" ("+String(p.brands).split(",")[0]+")":""),
       kcal:+p.nutriments["energy-kcal_100g"]||0,
       p:+p.nutriments["proteins_100g"]||0,
       c:+p.nutriments["carbohydrates_100g"]||0,
       f:+p.nutriments["fat_100g"]||0,
       gluten:(p.allergens_tags||[]).includes("en:gluten")
     })));
-  }catch{ $("offResults").innerHTML='<div class="muted">Search needs internet and it seems unavailable right now. The staples list below always works offline.</div>'; }
-};
-$("offQ").addEventListener("keydown",e=>{ if(e.key==="Enter") $("offGo").click(); });
+  }
+  if(!html){
+    html = netFail
+      ? '<div class="flag amber">Couldn\'t reach the food database. If you\'re previewing this inside Claude, external searches are blocked by its sandbox — the search works once the app is opened in a normal browser (your GitHub Pages link). Your 🏠 staples below always work.</div>'
+      : '<div class="muted">Nothing found — try one simple word (e.g. "yogurt"), or use the staples list below.</div>';
+  }
+  $("offResults").innerHTML=html;
+}
+$("offQ").addEventListener("input",()=>{
+  clearTimeout(debTimer);
+  const v=$("offQ").value.trim();
+  if(v.length<3){ $("offResults").innerHTML=""; return; }
+  debTimer=setTimeout(()=>runSearch(v),450);
+});
+$("offGo").onclick=()=>runSearch($("offQ").value.trim());
+$("offQ").addEventListener("keydown",e=>{ if(e.key==="Enter") runSearch($("offQ").value.trim()); });
+document.addEventListener("click",e=>{
+  const st=e.target.closest("[data-stap]");
+  if(st){ $("foodSel").value=st.dataset.stap; $("offResults").innerHTML=""; $("foodQty").focus(); }
+});
 document.addEventListener("click",e=>{
   const r=e.target.closest("[data-off]");
   if(!r) return;
