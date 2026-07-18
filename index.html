@@ -171,9 +171,9 @@
         <div class="h">AI PHOTO &amp; DESCRIBE</div>
         <p style="font-size:13.5px;line-height:1.5;margin:0 0 8px">
           Optional. Works with a <b>free Google Gemini key</b> (aistudio.google.com → Get API key,
-          no card needed, starts with "AIza") or a paid Anthropic key ("sk-ant…").
+          no card needed — new keys start with "AQ.", older ones with "AIza") or a paid Anthropic key ("sk-ant…").
         </p>
-        <input id="keyInput" type="password" placeholder="AIza... or sk-ant-..." style="margin-bottom:8px">
+        <input id="keyInput" type="password" placeholder="AQ.… / AIza… / sk-ant-…" style="margin-bottom:8px">
         <button class="btn full" id="keySave">Enable AI</button>
         <p class="tiny">Key is stored only on this device. Never publish a page containing your key. Note: on Gemini's free tier, Google may use your prompts (incl. meal photos) to improve their models — use Portions/Search if you prefer full privacy.</p>
       </div>
@@ -516,11 +516,12 @@ function refreshAIPanel(){
   $("aiNoKey").classList.toggle("hidden",!!apiKey);
   $("aiReady").classList.toggle("hidden",!apiKey);
 }
+const isGeminiKey=k=>k.startsWith("AIza")||k.startsWith("AQ.");
 $("keySave").onclick=()=>{
   const k=$("keyInput").value.trim();
-  if(!k.startsWith("sk-ant") && !k.startsWith("AIza")){ toast("Paste an Anthropic (sk-ant…) or Gemini (AIza…) key"); return; }
+  if(!k.startsWith("sk-ant") && !isGeminiKey(k)){ toast("Paste a Gemini key (AQ./AIza…) or Anthropic key (sk-ant…)"); return; }
   apiKey=k; localStorage.setItem("fl:key",k); $("keyInput").value=""; refreshAIPanel();
-  toast("AI enabled via "+(k.startsWith("AIza")?"Gemini":"Claude"));
+  toast("AI enabled via "+(isGeminiKey(k)?"Gemini":"Claude"));
 };
 $("keyClear").onclick=()=>{ apiKey=""; localStorage.removeItem("fl:key"); refreshAIPanel(); };
 
@@ -530,7 +531,7 @@ function extractJson(text){
   return JSON.parse(clean.slice(clean.indexOf("{"),clean.lastIndexOf("}")+1));
 }
 async function askAI(content){
-  if(apiKey.startsWith("AIza")){
+  if(isGeminiKey(apiKey)){
     // Google Gemini (free tier via AI Studio)
     const parts=content.map(b=> b.type==="image"
       ? {inline_data:{mime_type:b.source.media_type,data:b.source.data}}
