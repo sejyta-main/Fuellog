@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16233F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>FuelLog — Cut to 15–17%</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#16233F; --ink-soft:#5A6784; --orange:#F2600C; --blue:#2456C8;
+    --bg:#EEF1F7; --card:#FFF; --green:#188A56; --red:#CE3320; --amber:#B97708; --line:#DFE4EF;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+  .wrap{max-width:460px;margin:0 auto;padding:18px 14px 70px}
+  .bebas{font-family:'Bebas Neue',sans-serif;letter-spacing:1px}
+  header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
+  .logo{font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:1.5px;line-height:1}
+  .logo span{color:var(--orange)}
+  .sub{font-size:11.5px;color:var(--ink-soft);font-weight:700}
+  .tabs button{border:none;background:transparent;color:var(--ink-soft);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer}
+  .tabs button.on{background:var(--ink);color:#fff}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(22,35,63,.05);margin-bottom:12px}
+  .h{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:1px;margin-bottom:8px}
+  .flag{border-radius:8px;padding:9px 12px;font-size:13px;line-height:1.45;margin-bottom:7px;border:1px solid;border-left-width:4px}
+  .flag.red{background:#CE332012;border-color:#CE332038;border-left-color:var(--red)}
+  .flag.amber{background:#B9770812;border-color:#B9770838;border-left-color:var(--amber)}
+  .flag.green{background:#188A5612;border-color:#188A5638;border-left-color:var(--green)}
+  .flag.blue{background:#2456C812;border-color:#2456C838;border-left-color:var(--blue)}
+  .actions{display:flex;gap:8px;margin-bottom:12px}
+  .abtn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:10px 4px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit}
+  .abtn.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .abtn .ico{font-size:19px}
+  input,select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;color:var(--ink);background:#FBFCFE;font-family:inherit}
+  input:focus-visible,button:focus-visible,select:focus-visible{outline:3px solid #2456C855;outline-offset:2px}
+  .btn{background:var(--orange);color:#fff;border:none;border-radius:10px;padding:12px 16px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+  .btn.ghost{background:transparent;color:var(--ink-soft);border:1.5px solid var(--line)}
+  .btn.full{width:100%}
+  .row{display:flex;gap:8px;align-items:center}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .mcell input{text-align:center;font-weight:700;padding:8px 6px}
+  .mlab{font-size:10.5px;font-weight:700;color:var(--ink-soft);text-align:center;letter-spacing:.5px;margin-top:3px}
+  .fav{display:flex;justify-content:space-between;align-items:center;width:100%;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:11px 12px;cursor:pointer;font-size:14px;color:var(--ink);text-align:left;font-family:inherit;margin-bottom:6px}
+  .fav b{font-weight:600}
+  .fav small{color:var(--ink-soft);font-size:12.5px;white-space:nowrap;margin-left:8px}
+  .meal{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+  .meal .del{border:none;background:transparent;color:var(--ink-soft);cursor:pointer;font-size:16px;padding:6px}
+  .muted{font-size:12px;color:var(--ink-soft)}
+  .tiny{font-size:11.5px;color:var(--ink-soft);margin:8px 0 0}
+  .stat{background:var(--bg);border-radius:10px;padding:10px 6px;text-align:center}
+  .stat .v{font-family:'Bebas Neue',sans-serif;font-size:22px}
+  .stat .l{font-size:10.5px;font-weight:700;color:var(--ink-soft);letter-spacing:1px}
+  .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:600;z-index:50;box-shadow:0 4px 14px rgba(0,0,0,.25);opacity:0;transition:opacity .2s}
+  .toast.show{opacity:1}
+  .bar{height:7px;background:var(--line);border-radius:4px;overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:4px;transition:width .5s ease}
+  .mrow{flex:1;min-width:0}
+  .mhead{display:flex;justify-content:space-between;font-size:11.5px;font-weight:700;color:var(--ink-soft);margin-bottom:4px}
+  .hidden{display:none !important}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="toast" id="toast"></div>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="logo">FUEL<span>LOG</span></div>
+      <div class="sub" id="subline">79 KG · ~20% BF · TARGET 15–17%</div>
+    </div>
+    <nav class="tabs">
+      <button id="tabToday" class="on">Today</button>
+      <button id="tabProg">Progress</button>
+    </nav>
+  </header>
+
+  <div id="flags"></div>
+
+  <!-- TODAY -->
+  <div id="viewToday">
+    <div class="card" style="text-align:center">
+      <svg width="196" height="196" viewBox="0 0 196 196" style="margin:0 auto;display:block">
+        <circle cx="98" cy="98" r="80" fill="none" stroke="var(--line)" stroke-width="13"/>
+        <circle id="ringArc" cx="98" cy="98" r="80" fill="none" stroke="var(--orange)" stroke-width="13"
+          stroke-linecap="round" stroke-dasharray="502.65" stroke-dashoffset="502.65"
+          transform="rotate(-90 98 98)" style="transition:stroke-dashoffset .6s ease"/>
+        <text id="ringNum" x="98" y="96" text-anchor="middle" font-family="Bebas Neue" font-size="48" fill="var(--ink)">2250</text>
+        <text id="ringLab" x="98" y="116" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink-soft)" letter-spacing="1.5">KCAL LEFT</text>
+        <text id="ringSub" x="98" y="134" text-anchor="middle" font-size="11" fill="var(--ink-soft)">0 / 2250</text>
+      </svg>
+      <div class="row" style="margin-top:14px;gap:12px">
+        <div class="mrow"><div class="mhead"><span>PROTEIN</span><span id="pV">0/180</span></div><div class="bar"><i id="pB" style="background:var(--orange);width:0%"></i></div></div>
+        <div class="mrow"><div class="mhead"><span>CARBS</span><span id="cV">0/240</span></div><div class="bar"><i id="cB" style="background:var(--blue);width:0%"></i></div></div>
+        <div class="mrow"><div class="mhead"><span>FAT</span><span id="fV">0/70</span></div><div class="bar"><i id="fB" style="background:var(--amber);width:0%"></i></div></div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="abtn" id="bQuick"><span class="ico">⚡</span>Quick</button>
+      <button class="abtn" id="bBuild"><span class="ico">🥗</span>Portions</button>
+      <button class="abtn" id="bManual"><span class="ico">⌨️</span>Manual</button>
+      <button class="abtn" id="bAI"><span class="ico">📷</span>AI</button>
+    </div>
+
+    <!-- QUICK -->
+    <div class="card hidden" id="panelQuick">
+      <div class="muted" style="font-weight:700;letter-spacing:1px;font-size:12px;margin-bottom:8px">TAP TO LOG — YOUR REPEAT MEALS</div>
+      <div id="favList"></div>
+      <p class="tiny">Meals you log by Portions or Manual are saved here automatically.</p>
+    </div>
+
+    <!-- PORTION BUILDER -->
+    <div class="card hidden" id="panelBuild">
+      <div class="h">PORTION CALCULATOR</div>
+      <div class="row" style="margin-bottom:8px">
+        <select id="foodSel" style="flex:2"></select>
+        <input id="foodQty" type="number" inputmode="decimal" placeholder="qty" style="flex:1" aria-label="Quantity">
+        <button class="btn" id="foodAdd">Add</button>
+      </div>
+      <div id="buildItems" class="muted" style="margin-bottom:8px"></div>
+      <div class="grid4" style="margin-bottom:8px">
+        <div class="stat"><div class="v" id="bKcal">0</div><div class="l">KCAL</div></div>
+        <div class="stat"><div class="v" id="bP">0</div><div class="l">PROT</div></div>
+        <div class="stat"><div class="v" id="bC">0</div><div class="l">CARB</div></div>
+        <div class="stat"><div class="v" id="bF">0</div><div class="l">FAT</div></div>
+      </div>
+      <input id="buildName" placeholder="Meal name (e.g. Lunch)" style="margin-bottom:8px">
+      <div class="row">
+        <button class="btn full" id="buildLog">Log meal</button>
+        <button class="btn ghost" id="buildClear">Clear</button>
+      </div>
+      <p class="tiny">USDA-based values. Weigh protein raw? Use the “(raw)” entries. This is more accurate than photo AI.</p>
+    </div>
+
+    <!-- MANUAL -->
+    <div class="card hidden" id="panelManual">
+      <input id="mName" placeholder="Meal name" style="margin-bottom:8px">
+      <div class="grid4">
+        <div class="mcell"><input id="mKcal" type="number" inputmode="numeric" aria-label="kcal"><div class="mlab">KCAL</div></div>
+        <div class="mcell"><input id="mP" type="number" inputmode="numeric" aria-label="protein g"><div class="mlab">PROT g</div></div>
+        <div class="mcell"><input id="mC" type="number" inputmode="numeric" aria-label="carbs g"><div class="mlab">CARB g</div></div>
+        <div class="mcell"><input id="mF" type="number" inputmode="numeric" aria-label="fat g"><div class="mlab">FAT g</div></div>
+      </div>
+      <button class="btn full" id="mLog" style="margin-top:10px">Log meal</button>
+    </div>
+
+    <!-- AI (optional, needs key) -->
+    <div class="card hidden" id="panelAI">
+      <div id="aiNoKey">
+        <div class="h">AI PHOTO &amp; DESCRIBE</div>
+        <p style="font-size:13.5px;line-height:1.5;margin:0 0 8px">
+          Optional. Paste an Anthropic API key to enable photo scanning and text estimates.
+          Without a key, Portions + Quick cover everything for free.
+        </p>
+        <input id="keyInput" type="password" placeholder="sk-ant-..." style="margin-bottom:8px">
+        <button class="btn full" id="keySave">Enable AI</button>
+        <p class="tiny">The key is stored only on this device (localStorage). Never publish a page containing your key.</p>
+      </div>
+      <div id="aiReady" class="hidden">
+        <label class="btn full" style="display:block;text-align:center;margin-bottom:8px">
+          📷 Scan a meal photo
+          <input id="photoIn" type="file" accept="image/*" class="hidden">
+        </label>
+        <input id="descIn" placeholder='Describe: "150g chicken, 200g sweet potato"' style="margin-bottom:8px">
+        <button class="btn full ghost" id="descGo">Estimate with AI</button>
+        <div id="aiStatus" class="tiny"></div>
+        <button class="btn ghost full" id="keyClear" style="margin-top:8px">Remove key</button>
+      </div>
+    </div>
+
+    <!-- PENDING (editable AI result) -->
+    <div class="card hidden" id="panelPending" style="border-color:var(--orange)">
+      <input id="pdName" style="font-weight:700;margin-bottom:8px" aria-label="Meal name">
+      <div id="pdItems" class="muted" style="margin-bottom:8px"></div>
+      <div class="grid4">
+        <div class="mcell"><input id="pdKcal" type="number"><div class="mlab">KCAL</div></div>
+        <div class="mcell"><input id="pdP" type="number"><div class="mlab">PROT g</div></div>
+        <div class="mcell"><input id="pdC" type="number"><div class="mlab">CARB g</div></div>
+        <div class="mcell"><input id="pdF" type="number"><div class="mlab">FAT g</div></div>
+      </div>
+      <div id="pdGluten"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn full" id="pdLog">Log it</button>
+        <button class="btn ghost" id="pdDiscard">Discard</button>
+      </div>
+      <p class="tiny">Every number is editable — your correction is what gets saved.</p>
+    </div>
+
+    <div class="card">
+      <div class="h">TODAY'S LOG</div>
+      <div id="mealList"><p class="muted" style="font-size:14px">Nothing yet. Tap <b>⚡ Quick</b> for a repeat meal or <b>🥗 Portions</b> to build one.</p></div>
+    </div>
+  </div>
+
+  <!-- PROGRESS -->
+  <div id="viewProg" class="hidden">
+    <div class="card">
+      <div class="h">MORNING WEIGHT</div>
+      <div class="row">
+        <input id="wIn" type="number" step="0.1" inputmode="decimal" placeholder="e.g. 78.4" aria-label="Weight kg">
+        <button class="btn" id="wLog">Log kg</button>
+      </div>
+      <p class="tiny">Once daily, after waking, before eating. The trend uses a 7-day average so daily jumps don't matter.</p>
+    </div>
+    <div class="card">
+      <div class="h">TREND → 15–17% BF</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
+        <div class="stat"><div class="v" id="tNow">—</div><div class="l">TREND</div></div>
+        <div class="stat"><div class="v" id="tRate">—</div><div class="l">RATE/WK</div></div>
+        <div class="stat"><div class="v" id="tEta">—</div><div class="l">ETA</div></div>
+      </div>
+      <svg id="spark" width="100%" height="56" viewBox="0 0 300 56" preserveAspectRatio="none" aria-label="Weight chart"></svg>
+      <div class="muted" id="goalLine" style="font-size:12.5px;margin-top:6px"></div>
+      <div id="adaptive" style="margin-top:10px"></div>
+    </div>
+    <div class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <div class="h" style="margin:0">LAST 7 DAYS</div>
+        <div id="streak" style="font-size:13px;font-weight:700;color:var(--orange)"></div>
+      </div>
+      <div id="weekList"></div>
+      <p class="tiny">Consistency beats perfection — 6 solid days a week reaches 15–17% in roughly 10–14 weeks.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ── constants ────────────────────────────────────────────────
+const T = { kcal:2250, protein:180, carbs:240, fat:70 };
+const START_W=79, LEAN=START_W*0.8, TARGET_BF=0.16;
+const TARGET_W=+(LEAN/(1-TARGET_BF)).toFixed(1);
+
+// Per-100g unless unit noted. USDA-based.
+const FOODS = [
+  {n:"Chicken breast, cooked", u:"g", per:100, kcal:165,p:31,c:0,f:3.6},
+  {n:"Chicken breast (raw)", u:"g", per:100, kcal:120,p:22.5,c:0,f:2.6},
+  {n:"Lean beef 5%, cooked", u:"g", per:100, kcal:170,p:26,c:0,f:7},
+  {n:"Egg, whole", u:"unit", per:1, kcal:72,p:6.3,c:0.4,f:4.8},
+  {n:"Greek yogurt 2%", u:"g", per:100, kcal:73,p:9.9,c:3.9,f:1.9},
+  {n:"Mozzarella", u:"g", per:100, kcal:300,p:22,c:2.2,f:22},
+  {n:"Whey scoop (ON Double Choc)", u:"scoop", per:1, kcal:120,p:24,c:3,f:1.5},
+  {n:"Sweet potato, cooked", u:"g", per:100, kcal:90,p:2,c:21,f:0.1},
+  {n:"White rice, cooked", u:"g", per:100, kcal:130,p:2.7,c:28,f:0.3},
+  {n:"Banana", u:"g", per:100, kcal:89,p:1.1,c:23,f:0.3},
+  {n:"Kiwi", u:"unit", per:1, kcal:44,p:0.8,c:10.5,f:0.4},
+  {n:"Strawberries", u:"g", per:100, kcal:32,p:0.7,c:7.7,f:0.3},
+  {n:"Avocado", u:"g", per:100, kcal:160,p:2,c:8.5,f:14.7},
+  {n:"Almonds", u:"g", per:100, kcal:579,p:21,c:22,f:50},
+  {n:"Chia seeds", u:"tbsp", per:1, kcal:58,p:2,c:5,f:3.7},
+  {n:"Olive oil", u:"tbsp", per:1, kcal:119,p:0,c:0,f:13.5},
+  {n:"Milk semi-skim", u:"ml", per:100, kcal:50,p:3.4,c:4.8,f:1.8},
+  {n:"GF oat milk", u:"ml", per:100, kcal:45,p:0.3,c:6.5,f:1.5},
+  {n:"Mixed salad veg", u:"g", per:100, kcal:20,p:1.2,c:3.5,f:0.2},
+];
+const SEED_FAVS = [
+  {name:"Post-workout shake",kcal:420,p:45,c:32,f:12},
+  {name:"Yogurt + whey bowl",kcal:240,p:30,c:15,f:5},
+  {name:"Chicken + sweet potato",kcal:520,p:45,c:45,f:15},
+  {name:"3 eggs + mozzarella",kcal:330,p:27,c:2,f:24},
+  {name:"Cappuccino (GF milk)",kcal:60,p:2,c:8,f:2},
+];
+
+// ── storage (localStorage) ───────────────────────────────────
+const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const K_TODAY = () => "fl:log:"+iso(new Date());
+const K_DAY = off => { const d=new Date(); d.setDate(d.getDate()-off); return "fl:log:"+iso(d); };
+const load = (k,def) => { try{ const v=localStorage.getItem(k); return v?JSON.parse(v):def; }catch{ return def; } };
+const save = (k,v) => { try{ localStorage.setItem(k,JSON.stringify(v)); }catch{ toast("Storage full — could not save"); } };
+
+let meals = load(K_TODAY(),[]);
+let favs = load("fl:favs",SEED_FAVS);
+let weights = load("fl:weights",[]);
+let build = [];
+let pending = null;
+let apiKey = localStorage.getItem("fl:key")||"";
+
+// ── helpers ──────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+const sum = arr => arr.reduce((a,m)=>({kcal:a.kcal+(+m.kcal||0),p:a.p+(+m.p||0),c:a.c+(+m.c||0),f:a.f+(+m.f||0)}),{kcal:0,p:0,c:0,f:0});
+let toastTimer=null;
+function toast(msg){ const t=$("toast"); t.textContent="✓ "+msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"),2200); }
+
+// ── render: today ────────────────────────────────────────────
+function renderToday(){
+  const s = sum(meals);
+  const CIRC=502.65, pct=Math.min(s.kcal/T.kcal,1), rem=Math.round(T.kcal-s.kcal);
+  $("ringArc").style.strokeDashoffset = CIRC*(1-pct);
+  $("ringArc").setAttribute("stroke", s.kcal>T.kcal?"var(--amber)":"var(--orange)");
+  $("ringNum").textContent = Math.abs(rem);
+  $("ringLab").textContent = rem<0?"KCAL OVER":"KCAL LEFT";
+  $("ringSub").textContent = Math.round(s.kcal)+" / "+T.kcal;
+  const bar=(v,t,V,B)=>{ $(V).textContent=Math.round(v)+"/"+t; $(B).style.width=Math.min(v/t*100,100)+"%"; };
+  bar(s.p,T.protein,"pV","pB"); bar(s.c,T.carbs,"cV","cB"); bar(s.f,T.fat,"fV","fB");
+
+  // flags (adherence-neutral)
+  const fl=[]; const h=new Date().getHours();
+  const gl = meals.filter(m=>m.gluten && m.gluten!=="none");
+  if(gl.length) fl.push(["red","Gluten check: "+gl.map(m=>esc(m.name)).join(", ")+". Verify labels — you are strictly gluten-free."]);
+  const frac=Math.min(Math.max((h-6)/15,0),1);
+  if(frac>0.35 && s.p < T.protein*frac-30) fl.push(["blue","Protein tip: you're at "+Math.round(s.p)+"g. A yogurt+whey bowl now keeps you on pace for 180g."]);
+  if(s.p>=T.protein) fl.push(["green","180g protein reached — muscle protected for today."]);
+  if(s.kcal>T.kcal) fl.push(["amber",Math.round(s.kcal-T.kcal)+" kcal over. One day never decides the cut — go lean protein + veg for the rest of today."]);
+  $("flags").innerHTML = fl.map(([t,x])=>`<div class="flag ${t}">${x}</div>`).join("");
+
+  // meal list
+  $("mealList").innerHTML = meals.length ? meals.map(m=>`
+    <div class="meal">
+      <div style="min-width:0">
+        <div style="font-weight:600;font-size:14px">${m.gluten&&m.gluten!=="none"?"⚠️ ":""}${esc(m.name)}</div>
+        <div class="muted">${m.time} · ${Math.round(m.kcal)} kcal · ${Math.round(m.p)}P/${Math.round(m.c)}C/${Math.round(m.f)}F</div>
+      </div>
+      <button class="del" data-del="${m.id}" aria-label="Delete ${esc(m.name)}">✕</button>
+    </div>`).join("")
+    : '<p class="muted" style="font-size:14px">Nothing yet. Tap <b>⚡ Quick</b> for a repeat meal or <b>🥗 Portions</b> to build one.</p>';
+
+  // favorites
+  $("favList").innerHTML = favs.map((f,i)=>`
+    <button class="fav" data-fav="${i}"><b>${esc(f.name)}</b><small>${f.kcal} kcal · ${f.p}P</small></button>`).join("");
+}
+
+function logMeal(m, remember=true){
+  const entry={ id:Date.now(), time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),
+    name:m.name||"Meal", kcal:+m.kcal||0, p:+m.p||0, c:+m.c||0, f:+m.f||0, gluten:m.gluten||"none" };
+  meals.push(entry); save(K_TODAY(),meals);
+  if(remember && !favs.some(f=>f.name.toLowerCase()===entry.name.toLowerCase())){
+    favs=[{name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f},...favs].slice(0,12);
+    save("fl:favs",favs);
+  }
+  hidePanels(); renderToday(); toast("Logged: "+entry.name);
+}
+
+// ── panels ───────────────────────────────────────────────────
+const panels=["panelQuick","panelBuild","panelManual","panelAI"];
+function hidePanels(){ panels.forEach(p=>$(p).classList.add("hidden")); ["bQuick","bBuild","bManual","bAI"].forEach(b=>$(b).classList.remove("on")); }
+function togglePanel(p,b){ const el=$(p),was=!el.classList.contains("hidden"); hidePanels(); if(!was){ el.classList.remove("hidden"); $(b).classList.add("on"); } }
+$("bQuick").onclick=()=>togglePanel("panelQuick","bQuick");
+$("bBuild").onclick=()=>togglePanel("panelBuild","bBuild");
+$("bManual").onclick=()=>togglePanel("panelManual","bManual");
+$("bAI").onclick=()=>{ togglePanel("panelAI","bAI"); refreshAIPanel(); };
+
+// favorites + delete (event delegation)
+document.addEventListener("click",e=>{
+  const fav=e.target.closest("[data-fav]");
+  if(fav){ logMeal(favs[+fav.dataset.fav], false); return; }
+  const del=e.target.closest("[data-del]");
+  if(del){ meals=meals.filter(m=>m.id!=+del.dataset.del); save(K_TODAY(),meals); renderToday(); }
+});
+
+// ── portion builder ──────────────────────────────────────────
+$("foodSel").innerHTML = FOODS.map((f,i)=>`<option value="${i}">${esc(f.n)} (per ${f.per>1?f.per:""}${f.u})</option>`).join("");
+function renderBuild(){
+  const s=sum(build.map(b=>b.m));
+  $("bKcal").textContent=Math.round(s.kcal); $("bP").textContent=Math.round(s.p);
+  $("bC").textContent=Math.round(s.c); $("bF").textContent=Math.round(s.f);
+  $("buildItems").innerHTML = build.map((b,i)=>`${esc(b.label)} <button class="del" data-bdel="${i}" style="font-size:12px">✕</button>`).join(" · ")||"No items yet.";
+}
+document.addEventListener("click",e=>{
+  const bd=e.target.closest("[data-bdel]");
+  if(bd){ build.splice(+bd.dataset.bdel,1); renderBuild(); }
+});
+$("foodAdd").onclick=()=>{
+  const f=FOODS[+$("foodSel").value]; const q=parseFloat($("foodQty").value);
+  if(!q||q<=0) return;
+  const mult=q/f.per;
+  build.push({ label:q+f.u+" "+f.n, m:{kcal:f.kcal*mult,p:f.p*mult,c:f.c*mult,f:f.f*mult} });
+  $("foodQty").value=""; renderBuild();
+};
+$("buildClear").onclick=()=>{ build=[]; renderBuild(); };
+$("buildLog").onclick=()=>{
+  if(!build.length) return;
+  const s=sum(build.map(b=>b.m));
+  logMeal({ name:$("buildName").value||"Built meal", kcal:Math.round(s.kcal), p:Math.round(s.p), c:Math.round(s.c), f:Math.round(s.f) });
+  build=[]; $("buildName").value=""; renderBuild();
+};
+
+// ── manual ───────────────────────────────────────────────────
+$("mLog").onclick=()=>{
+  logMeal({ name:$("mName").value||"Manual entry", kcal:$("mKcal").value, p:$("mP").value, c:$("mC").value, f:$("mF").value });
+  ["mName","mKcal","mP","mC","mF"].forEach(id=>$(id).value="");
+};
+
+// ── AI (optional key) ────────────────────────────────────────
+function refreshAIPanel(){
+  $("aiNoKey").classList.toggle("hidden",!!apiKey);
+  $("aiReady").classList.toggle("hidden",!apiKey);
+}
+$("keySave").onclick=()=>{ const k=$("keyInput").value.trim(); if(!k.startsWith("sk-ant")){ toast("That doesn't look like an Anthropic key"); return; } apiKey=k; localStorage.setItem("fl:key",k); $("keyInput").value=""; refreshAIPanel(); toast("AI enabled"); };
+$("keyClear").onclick=()=>{ apiKey=""; localStorage.removeItem("fl:key"); refreshAIPanel(); };
+
+const SPEC=`Respond ONLY with JSON, no markdown: {"name":"short meal name","items":[{"item":"...","est":"portion"}],"kcal":0,"protein":0,"carbs":0,"fat":0,"gluten_risk":"none|possible|likely","gluten_note":"one sentence or empty"}`;
+async function askAI(content){
+  const res=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{ "Content-Type":"application/json","x-api-key":apiKey,
+      "anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true" },
+    body:JSON.stringify({ model:"claude-sonnet-4-6", max_tokens:800, messages:[{role:"user",content}] })
+  });
+  if(!res.ok) throw new Error("API "+res.status);
+  const data=await res.json();
+  const text=data.content.filter(b=>b.type==="text").map(b=>b.text).join("\n");
+  const clean=text.replace(/```json|```/g,"").trim();
+  return JSON.parse(clean.slice(clean.indexOf("{"),clean.lastIndexOf("}")+1));
+}
+function showPending(r){
+  pending=r;
+  $("pdName").value=r.name||"Meal";
+  $("pdItems").textContent=(r.items||[]).map(it=>it.item+" ("+it.est+")").join(" · ");
+  $("pdKcal").value=Math.round(r.kcal||0); $("pdP").value=Math.round(r.protein||0);
+  $("pdC").value=Math.round(r.carbs||0); $("pdF").value=Math.round(r.fat||0);
+  $("pdGluten").innerHTML = r.gluten_risk && r.gluten_risk!=="none"
+    ? `<div class="flag red" style="margin-top:10px">⚠️ Gluten risk: ${esc(r.gluten_note||"verify ingredients before eating.")}</div>` : "";
+  hidePanels(); $("panelPending").classList.remove("hidden");
+}
+$("pdLog").onclick=()=>{ if(!pending) return;
+  logMeal({ name:$("pdName").value, kcal:$("pdKcal").value, p:$("pdP").value, c:$("pdC").value, f:$("pdF").value, gluten:pending.gluten_risk });
+  pending=null; $("panelPending").classList.add("hidden");
+};
+$("pdDiscard").onclick=()=>{ pending=null; $("panelPending").classList.add("hidden"); };
+
+$("photoIn").addEventListener("change",async e=>{
+  const f=e.target.files&&e.target.files[0]; e.target.value=""; if(!f) return;
+  $("aiStatus").textContent="Analyzing photo…";
+  try{
+    const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(f); });
+    const r=await askAI([
+      {type:"image",source:{type:"base64",media_type:f.type||"image/jpeg",data:b64}},
+      {type:"text",text:"Estimate this meal. User is STRICTLY gluten-free (bread, pasta, cereals, soy sauce, malt, breading = risk). "+SPEC}
+    ]);
+    $("aiStatus").textContent=""; showPending(r);
+  }catch(err){ $("aiStatus").textContent="Analysis failed ("+err.message+"). Check the key and connection."; }
+});
+$("descGo").onclick=async()=>{
+  const txt=$("descIn").value.trim(); if(!txt) return;
+  $("aiStatus").textContent="Estimating…";
+  try{
+    const r=await askAI([{type:"text",text:`Estimate this meal: "${txt}". User is STRICTLY gluten-free; flag gluten risk. Assume typical portions for a 79kg man cutting if missing. `+SPEC}]);
+    $("aiStatus").textContent=""; $("descIn").value=""; showPending(r);
+  }catch(err){ $("aiStatus").textContent="Estimate failed ("+err.message+")."; }
+};
+
+// ── progress ─────────────────────────────────────────────────
+function renderProgress(){
+  const avg=a=>a.length?a.reduce((x,y)=>x+y.kg,0)/a.length:null;
+  const l7=avg(weights.slice(-7)), p7=avg(weights.slice(-14,-7));
+  const rate=(l7!=null&&p7!=null)?l7-p7:null;
+  const curW=weights.length?weights[weights.length-1].kg:START_W;
+  const bf=Math.max((curW-LEAN)/curW*100,5);
+  const togo=Math.max(curW-TARGET_W,0);
+  $("subline").textContent=`${curW} KG · ~${bf.toFixed(0)}% BF · TARGET 15–17%`;
+  $("tNow").textContent=l7?l7.toFixed(1)+" kg":"—";
+  $("tRate").textContent=rate!=null?(rate>0?"+":"")+rate.toFixed(2):"—";
+  $("tEta").textContent=(rate&&rate<-0.05)?Math.ceil(togo/-rate)+" wks":"—";
+  $("goalLine").innerHTML=`Goal weight ≈ <b>${TARGET_W} kg</b> (${togo.toFixed(1)} kg of fat to go, holding muscle).`;
+
+  // sparkline
+  const pts=weights.slice(-30);
+  if(pts.length>=2){
+    const mn=Math.min(...pts.map(p=>p.kg))-0.3, mx=Math.max(...pts.map(p=>p.kg))+0.3;
+    const d=pts.map((p,i)=>`${i?"L":"M"}${(i/(pts.length-1))*300},${56-((p.kg-mn)/(mx-mn))*50-3}`).join(" ");
+    $("spark").innerHTML=`<path d="${d}" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round"/>`;
+  } else $("spark").innerHTML="";
+
+  // adaptive
+  let ad="";
+  if(weights.length>=14 && rate!=null){
+    if(rate>-0.15) ad=`<div class="flag amber">Weight trend is flat (${rate>=0?"+":""}${rate.toFixed(2)} kg/wk). Suggested: reduce daily target ~150 kcal (carbs at dinner) or add 10 min LISS per session.</div>`;
+    else if(rate<-0.7) ad=`<div class="flag amber">Losing fast (${rate.toFixed(2)} kg/wk). To protect muscle, add ~100–150 kcal/day around training.</div>`;
+    else ad=`<div class="flag green">Perfect rate: ${rate.toFixed(2)} kg/wk. Keep targets exactly as they are.</div>`;
+  } else ad=`<div class="flag blue">Log weight for 14 days and FuelLog starts adjusting your calorie target to your real metabolism.</div>`;
+  $("adaptive").innerHTML=ad;
+
+  // week + streak
+  let html="", streakN=0, broken=false;
+  const days=[];
+  for(let i=6;i>=0;i--){ const dm=load(K_DAY(i),[]); days.push({key:K_DAY(i).slice(10),s:sum(dm),logged:dm.length>0}); }
+  [...days].reverse().forEach(d=>{ if(!broken){ if(d.logged) streakN++; else broken=true; } });
+  days.forEach(d=>{
+    html+=`<div class="meal"><span style="font-weight:600;font-size:14px">${d.key}</span>`+
+      (d.logged
+        ? `<span style="font-size:14px"><span style="color:${d.s.kcal<=T.kcal*1.05?"var(--green)":"var(--amber)"};font-weight:700">${Math.round(d.s.kcal)} kcal</span><span class="muted"> · ${Math.round(d.s.p)}g P</span></span>`
+        : `<span class="muted">no log</span>`)+`</div>`;
+  });
+  $("weekList").innerHTML=html;
+  $("streak").textContent=streakN>0?"🔥 "+streakN+"-day streak":"";
+}
+$("wLog").onclick=()=>{
+  const kg=parseFloat($("wIn").value);
+  if(!kg||kg<40||kg>150) return;
+  weights=[...weights.filter(w=>w.date!==iso(new Date())),{date:iso(new Date()),kg}].sort((a,b)=>a.date.localeCompare(b.date));
+  save("fl:weights",weights); $("wIn").value=""; renderProgress(); toast("Weight logged: "+kg+" kg");
+};
+
+// ── tabs ─────────────────────────────────────────────────────
+$("tabToday").onclick=()=>{ $("viewToday").classList.remove("hidden"); $("viewProg").classList.add("hidden"); $("tabToday").classList.add("on"); $("tabProg").classList.remove("on"); };
+$("tabProg").onclick=()=>{ $("viewProg").classList.remove("hidden"); $("viewToday").classList.add("hidden"); $("tabProg").classList.add("on"); $("tabToday").classList.remove("on"); renderProgress(); };
+
+// init
+renderToday(); renderBuild(); renderProgress();
+</script>
+</body>
+</html>
