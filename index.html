@@ -65,6 +65,8 @@
   .mrow{flex:1;min-width:0}
   .mhead{display:flex;justify-content:space-between;font-size:11.5px;font-weight:700;color:var(--ink-soft);margin-bottom:4px}
   .hidden{display:none !important}
+  .mtab{border:1px solid var(--line);background:var(--bg);color:var(--ink-soft);border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
+  .mtab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -97,10 +99,25 @@
         <text id="ringSub" x="98" y="134" text-anchor="middle" font-size="11" fill="var(--ink-soft)">0 / 2250</text>
       </svg>
       <div class="row" style="margin-top:14px;gap:12px">
-        <div class="mrow"><div class="mhead"><span>PROTEIN</span><span id="pV">0/180</span></div><div class="bar"><i id="pB" style="background:var(--orange);width:0%"></i></div></div>
-        <div class="mrow"><div class="mhead"><span>CARBS</span><span id="cV">0/240</span></div><div class="bar"><i id="cB" style="background:var(--blue);width:0%"></i></div></div>
-        <div class="mrow"><div class="mhead"><span>FAT</span><span id="fV">0/70</span></div><div class="bar"><i id="fB" style="background:var(--amber);width:0%"></i></div></div>
+        <div class="mrow" data-macro="p" role="button" tabindex="0" style="cursor:pointer"><div class="mhead"><span>PROTEIN ▾</span><span id="pV">0/180</span></div><div class="bar"><i id="pB" style="background:var(--orange);width:0%"></i></div></div>
+        <div class="mrow" data-macro="c" role="button" tabindex="0" style="cursor:pointer"><div class="mhead"><span>CARBS ▾</span><span id="cV">0/240</span></div><div class="bar"><i id="cB" style="background:var(--blue);width:0%"></i></div></div>
+        <div class="mrow" data-macro="f" role="button" tabindex="0" style="cursor:pointer"><div class="mhead"><span>FAT ▾</span><span id="fV">0/70</span></div><div class="bar"><i id="fB" style="background:var(--amber);width:0%"></i></div></div>
       </div>
+      <div class="muted" style="font-size:11px;margin-top:8px">Tap a macro to see which meals drove it</div>
+    </div>
+
+    <!-- MACRO BREAKDOWN -->
+    <div class="card hidden" id="panelMacro">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="display:flex;gap:6px">
+          <button class="mtab" data-mtab="p">Protein</button>
+          <button class="mtab" data-mtab="c">Carbs</button>
+          <button class="mtab" data-mtab="f">Fat</button>
+        </div>
+        <button class="del" data-mclose="1" aria-label="Hide breakdown" style="font-size:16px">✕</button>
+      </div>
+      <div class="muted" id="macroHead" style="font-weight:700;letter-spacing:1px;font-size:11px;margin-bottom:8px"></div>
+      <div id="macroList"></div>
     </div>
 
     <div class="actions">
@@ -372,6 +389,37 @@ function renderToday(){
   // favorites
   $("favList").innerHTML = favs.map((f,i)=>`
     <button class="fav" data-fav="${i}"><b>${esc(f.name)}</b><small>${f.kcal} kcal · ${f.p}P</small></button>`).join("");
+
+  renderMacroPanel();
+}
+
+// ── macro breakdown (tap PROTEIN/CARBS/FAT) ──────────────────
+let macroView=null; // null | 'p' | 'c' | 'f'
+const MACRO_META={ p:{label:"PROTEIN",unit:"g",target:()=>T.protein,color:"var(--orange)"},
+                   c:{label:"CARBS",unit:"g",target:()=>T.carbs,color:"var(--blue)"},
+                   f:{label:"FAT",unit:"g",target:()=>T.fat,color:"var(--amber)"} };
+function renderMacroPanel(){
+  const panel=$("panelMacro");
+  if(!macroView){ panel.classList.add("hidden"); return; }
+  panel.classList.remove("hidden");
+  document.querySelectorAll(".mtab").forEach(b=>b.classList.toggle("on",b.dataset.mtab===macroView));
+  const meta=MACRO_META[macroView];
+  const total=meals.reduce((a,m)=>a+(+m[macroView]||0),0);
+  $("macroHead").textContent=`${meta.label} — ${Math.round(total)}${meta.unit} of ${meta.target()}${meta.unit} · BY MEAL, HIGHEST FIRST`;
+  const rows=meals.map(m=>({name:m.name,gluten:m.gluten,val:+m[macroView]||0}))
+    .filter(r=>r.val>0).sort((a,b)=>b.val-a.val);
+  if(!rows.length){ $("macroList").innerHTML='<p class="muted" style="font-size:13.5px;margin:0">No meals with '+meta.label.toLowerCase()+' logged yet today.</p>'; return; }
+  const maxV=rows[0].val;
+  $("macroList").innerHTML=rows.map(r=>{
+    const sharePct=total?Math.round(r.val/total*100):0;
+    return `<div style="padding:7px 0;border-bottom:1px solid var(--line)">
+      <div style="display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:4px">
+        <span style="font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px">${r.gluten&&r.gluten!=="none"?"⚠️ ":""}${esc(r.name)}</span>
+        <span style="white-space:nowrap;font-weight:700">${Math.round(r.val)}${meta.unit} <span class="muted" style="font-weight:400">· ${sharePct}%</span></span>
+      </div>
+      <div class="bar" style="height:6px"><i style="background:${meta.color};width:${(r.val/maxV*100).toFixed(0)}%"></i></div>
+    </div>`;
+  }).join("");
 }
 
 function logMeal(m, remember=true){
@@ -394,8 +442,13 @@ $("bBuild").onclick=()=>togglePanel("panelBuild","bBuild");
 $("bManual").onclick=()=>togglePanel("panelManual","bManual");
 $("bAI").onclick=()=>{ togglePanel("panelAI","bAI"); refreshAIPanel(); };
 
-// favorites + delete + edit (event delegation)
+// favorites + delete + edit + macro breakdown (event delegation)
 document.addEventListener("click",e=>{
+  const mb=e.target.closest("[data-macro]");
+  if(mb){ macroView = macroView===mb.dataset.macro ? null : mb.dataset.macro; renderMacroPanel(); return; }
+  const mt=e.target.closest("[data-mtab]");
+  if(mt){ macroView=mt.dataset.mtab; renderMacroPanel(); return; }
+  if(e.target.closest("[data-mclose]")){ macroView=null; renderMacroPanel(); return; }
   const fav=e.target.closest("[data-fav]");
   if(fav){ logMeal(favs[+fav.dataset.fav], false); return; }
   const ed=e.target.closest("[data-edit]");
