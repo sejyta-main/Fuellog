@@ -338,6 +338,39 @@ let toastTimer=null;
 function toast(msg){ const t=$("toast"); t.textContent="✓ "+msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"),2200); }
 
 // ── render: today ────────────────────────────────────────────
+// Next-meal engine: mines your own history for what you eat at this
+// hour, scores it against today's remaining macros. No AI needed.
+let sugCache=[];
+function parseHour(t){
+  if(!t) return null;
+  const m=String(t).match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  if(!m) return null;
+  let h=+m[1]; const ap=(m[3]||"").toUpperCase();
+  if(ap==="PM"&&h<12)h+=12; if(ap==="AM"&&h===12)h=0;
+  return h;
+}
+function nextMealSuggestions(rem, nowH){
+  const seen={}, cands=[];
+  Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).sort().reverse().slice(0,45).forEach(k=>{
+    load(k,[]).forEach(m=>{
+      if(m.gluten && m.gluten!=="none") return;               // never suggest gluten-flagged
+      const h=parseHour(m.time); if(h==null||!(+m.p>0)) return;
+      const key=String(m.name).toLowerCase().trim();
+      if(!seen[key]){ seen[key]={name:m.name,kcal:+m.kcal||0,p:+m.p||0,c:+m.c||0,f:+m.f||0,hours:[h]}; cands.push(seen[key]); }
+      else seen[key].hours.push(h);
+    });
+  });
+  const fits=x=>x.p>=8 && x.kcal<=rem.kcal+120;               // meaningful protein, fits budget
+  const timely=cands.filter(x=>fits(x) && x.hours.some(h=>h>=nowH-1 && h<=nowH+5));
+  const pool=timely.length>=2 ? timely : cands.filter(fits);  // widen window if history is thin
+  return pool.map(x=>{
+    let s=3*Math.min(x.p,rem.p);                              // fills the protein gap
+    s+=Math.min(x.p/Math.max(x.kcal,1)*100,25);               // protein density bonus
+    s-=2*Math.max(0,x.kcal-rem.kcal)/50;                      // penalize busting calories
+    s-=Math.max(0,x.c-rem.c)/10 + Math.max(0,x.f-rem.f)/5;    // and carbs/fat overshoot
+    return {...x,score:s};
+  }).sort((a,b)=>b.score-a.score).slice(0,3);
+}
 function renderToday(){
   const s = sum(meals);
   const CIRC=502.65, pct=Math.min(s.kcal/T.kcal,1), rem=Math.round(T.kcal-s.kcal);
@@ -354,7 +387,26 @@ function renderToday(){
   const gl = meals.filter(m=>m.gluten && m.gluten!=="none");
   if(gl.length) fl.push(["red","Gluten check: "+gl.map(m=>esc(m.name)).join(", ")+". Verify labels — you are strictly gluten-free."]);
   const frac=Math.min(Math.max((h-6)/15,0),1);
-  if(frac>0.35 && s.p < T.protein*frac-30) fl.push(["blue","Protein tip: you're at "+Math.round(s.p)+"g. A yogurt+whey bowl now keeps you on pace for 180g."]);
+  if(frac>0.35 && s.p < T.protein*frac-30){
+    const rem={kcal:Math.max(T.kcal-s.kcal,0), p:Math.max(T.protein-s.p,0), c:Math.max(T.carbs-s.c,0), f:Math.max(T.fat-s.f,0)};
+    sugCache=nextMealSuggestions(rem,h);
+    let tip=`Protein tip: you're at <b>${Math.round(s.p)}g</b> with <b>${Math.round(rem.p)}g</b> and ${Math.round(rem.kcal)} kcal still to go.`;
+    if(sugCache.length){
+      tip+=`<div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">`+
+        sugCache.map((x,i)=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 10px">
+          <div style="min-width:0">
+            <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.name)}</div>
+            <div class="muted" style="font-size:11.5px">+${Math.round(x.p)}g P · +${Math.round(x.kcal)} kcal · +${Math.round(x.c)}g C · +${Math.round(x.f)}g F</div>
+          </div>
+          <button class="btn" data-sug="${i}" style="padding:6px 14px;font-size:12px;flex-shrink:0">Log</button>
+        </div>`).join("")+
+        `</div><div class="muted" style="font-size:11px;margin-top:6px">Ranked from meals you've logged around this time · fits today's remaining budget · gluten-flagged items excluded</div>`;
+    } else {
+      tip+=` A yogurt+whey bowl (+30g P, ~240 kcal) keeps you on pace.`;
+    }
+    fl.push(["blue",tip]);
+  }
   if(s.p>=T.protein) fl.push(["green","180g protein reached — muscle protected for today."]);
   if(s.kcal>T.kcal) fl.push(["amber",Math.round(s.kcal-T.kcal)+" kcal over. One day never decides the cut — go lean protein + veg for the rest of today."]);
   $("flags").innerHTML = fl.map(([t,x])=>`<div class="flag ${t}">${x}</div>`).join("");
@@ -444,6 +496,8 @@ $("bAI").onclick=()=>{ togglePanel("panelAI","bAI"); refreshAIPanel(); };
 
 // favorites + delete + edit + macro breakdown (event delegation)
 document.addEventListener("click",e=>{
+  const sg=e.target.closest("[data-sug]");
+  if(sg){ const x=sugCache[+sg.dataset.sug]; if(x) logMeal({name:x.name,kcal:x.kcal,p:x.p,c:x.c,f:x.f}, false); return; }
   const mb=e.target.closest("[data-macro]");
   if(mb){ macroView = macroView===mb.dataset.macro ? null : mb.dataset.macro; renderMacroPanel(); return; }
   const mt=e.target.closest("[data-mtab]");
