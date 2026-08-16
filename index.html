@@ -230,9 +230,25 @@
         <div class="stat"><div class="v" id="tRate">—</div><div class="l">RATE/WK</div></div>
         <div class="stat"><div class="v" id="tEta">—</div><div class="l">ETA</div></div>
       </div>
-      <svg id="spark" width="100%" height="56" viewBox="0 0 300 56" preserveAspectRatio="none" aria-label="Weight chart"></svg>
       <div class="muted" id="goalLine" style="font-size:12.5px;margin-top:6px"></div>
       <div id="adaptive" style="margin-top:10px"></div>
+    </div>
+    <div class="card">
+      <div class="h">TRENDS</div>
+      <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">WEIGHT — SCALE vs TREND (30 DAYS)</div>
+      <svg id="chW" width="100%" height="110" viewBox="0 0 300 110" preserveAspectRatio="none" aria-label="Weight trend chart"></svg>
+      <div class="muted" id="chWcap" style="font-size:11.5px;margin:2px 0 14px"></div>
+      <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">CALORIES — LAST 14 DAYS vs TARGET</div>
+      <svg id="chK" width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Calorie chart"></svg>
+      <div class="muted" style="font-size:11.5px;margin:2px 0 14px">Green = at/under 2,250 · Amber = over · Dashed = target · Gray tick = no log</div>
+      <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">PROTEIN — LAST 14 DAYS vs 180 G</div>
+      <svg id="chP" width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Protein chart"></svg>
+      <div class="muted" style="font-size:11.5px;margin:2px 0 0">Green = 160g+ (muscle protected) · Amber = under · Dashed = 180g</div>
+    </div>
+    <div class="card">
+      <div class="h">EXPORT</div>
+      <button class="btn full" id="expBtn">⬇ Download full report (CSV)</button>
+      <p class="tiny">Every meal with date, time, name, calories, protein, carbs, fat and gluten flag — plus daily totals and all weigh-ins. Opens in Excel or Google Sheets.</p>
     </div>
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:8px">
@@ -294,6 +310,7 @@ let favs = load("fl:favs",SEED_FAVS);
 let weights = load("fl:weights",[]);
 let build = [];
 let pending = null;
+let editingId = null;
 let apiKey = localStorage.getItem("fl:key")||"";
 
 // ── helpers ──────────────────────────────────────────────────
@@ -325,14 +342,30 @@ function renderToday(){
   if(s.kcal>T.kcal) fl.push(["amber",Math.round(s.kcal-T.kcal)+" kcal over. One day never decides the cut — go lean protein + veg for the rest of today."]);
   $("flags").innerHTML = fl.map(([t,x])=>`<div class="flag ${t}">${x}</div>`).join("");
 
-  // meal list
-  $("mealList").innerHTML = meals.length ? meals.map(m=>`
+  // meal list (with inline editing)
+  $("mealList").innerHTML = meals.length ? meals.map(m=> m.id===editingId ? `
+    <div class="meal" style="flex-direction:column;align-items:stretch;gap:8px;padding:12px 0">
+      <input id="eName" value="${esc(m.name)}" aria-label="Meal name">
+      <div class="grid4">
+        <div class="mcell"><input id="eKcal" type="number" value="${Math.round(m.kcal)}" aria-label="kcal"><div class="mlab">KCAL</div></div>
+        <div class="mcell"><input id="eP" type="number" value="${Math.round(m.p)}" aria-label="protein"><div class="mlab">PROT g</div></div>
+        <div class="mcell"><input id="eC" type="number" value="${Math.round(m.c)}" aria-label="carbs"><div class="mlab">CARB g</div></div>
+        <div class="mcell"><input id="eF" type="number" value="${Math.round(m.f)}" aria-label="fat"><div class="mlab">FAT g</div></div>
+      </div>
+      <div class="row">
+        <button class="btn" data-esave="${m.id}" style="flex:1">Save changes</button>
+        <button class="btn ghost" data-ecancel="1">Cancel</button>
+      </div>
+    </div>` : `
     <div class="meal">
       <div style="min-width:0">
         <div style="font-weight:600;font-size:14px">${m.gluten&&m.gluten!=="none"?"⚠️ ":""}${esc(m.name)}</div>
         <div class="muted">${m.time} · ${Math.round(m.kcal)} kcal · ${Math.round(m.p)}P/${Math.round(m.c)}C/${Math.round(m.f)}F</div>
       </div>
-      <button class="del" data-del="${m.id}" aria-label="Delete ${esc(m.name)}">✕</button>
+      <div style="display:flex;flex-shrink:0">
+        <button class="del" data-edit="${m.id}" aria-label="Edit ${esc(m.name)}">✎</button>
+        <button class="del" data-del="${m.id}" aria-label="Delete ${esc(m.name)}">✕</button>
+      </div>
     </div>`).join("")
     : '<p class="muted" style="font-size:14px">Nothing yet. Tap <b>⚡ Quick</b> for a repeat meal or <b>🥗 Portions</b> to build one.</p>';
 
@@ -361,10 +394,24 @@ $("bBuild").onclick=()=>togglePanel("panelBuild","bBuild");
 $("bManual").onclick=()=>togglePanel("panelManual","bManual");
 $("bAI").onclick=()=>{ togglePanel("panelAI","bAI"); refreshAIPanel(); };
 
-// favorites + delete (event delegation)
+// favorites + delete + edit (event delegation)
 document.addEventListener("click",e=>{
   const fav=e.target.closest("[data-fav]");
   if(fav){ logMeal(favs[+fav.dataset.fav], false); return; }
+  const ed=e.target.closest("[data-edit]");
+  if(ed){ editingId=+ed.dataset.edit; renderToday(); return; }
+  const es=e.target.closest("[data-esave]");
+  if(es){
+    const m=meals.find(x=>x.id==+es.dataset.esave);
+    if(m){
+      m.name=$("eName").value||m.name;
+      m.kcal=+$("eKcal").value||0; m.p=+$("eP").value||0;
+      m.c=+$("eC").value||0; m.f=+$("eF").value||0;
+      save(K_TODAY(),meals);
+    }
+    editingId=null; renderToday(); toast("Entry updated"); return;
+  }
+  if(e.target.closest("[data-ecancel]")){ editingId=null; renderToday(); return; }
   const del=e.target.closest("[data-del]");
   if(del){ meals=meals.filter(m=>m.id!=+del.dataset.del); save(K_TODAY(),meals); renderToday(); }
 });
@@ -609,13 +656,7 @@ function renderProgress(){
   $("tEta").textContent=(rate&&rate<-0.05)?Math.ceil(togo/-rate)+" wks":"—";
   $("goalLine").innerHTML=`Goal weight ≈ <b>${TARGET_W} kg</b> (${togo.toFixed(1)} kg of fat to go, holding muscle).`;
 
-  // sparkline
-  const pts=weights.slice(-30);
-  if(pts.length>=2){
-    const mn=Math.min(...pts.map(p=>p.kg))-0.3, mx=Math.max(...pts.map(p=>p.kg))+0.3;
-    const d=pts.map((p,i)=>`${i?"L":"M"}${(i/(pts.length-1))*300},${56-((p.kg-mn)/(mx-mn))*50-3}`).join(" ");
-    $("spark").innerHTML=`<path d="${d}" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round"/>`;
-  } else $("spark").innerHTML="";
+  renderCharts();
 
   // adaptive
   let ad="";
@@ -646,6 +687,73 @@ $("wLog").onclick=()=>{
   weights=[...weights.filter(w=>w.date!==iso(new Date())),{date:iso(new Date()),kg}].sort((a,b)=>a.date.localeCompare(b.date));
   save("fl:weights",weights); $("wIn").value=""; renderProgress(); toast("Weight logged: "+kg+" kg");
 };
+
+// ── trends charts (MacroFactor-style) ────────────────────────
+function barsChart(svgId, vals, target, goodFn){
+  const W=300,H=90,n=vals.length,bw=(W/n)*0.62;
+  const maxV=Math.max(target*1.25,...vals.map(x=>x.v||0));
+  let s="";
+  vals.forEach((x,i)=>{
+    const cx=(i+0.5)*(W/n);
+    if(!x.logged){ s+=`<rect x="${(cx-bw/2).toFixed(1)}" y="${H-5}" width="${bw.toFixed(1)}" height="4" rx="2" fill="#C9CFDD"/>`; return; }
+    const h=Math.max(x.v/maxV*(H-12),3);
+    s+=`<rect x="${(cx-bw/2).toFixed(1)}" y="${(H-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${goodFn(x.v)?"var(--green)":"var(--amber)"}"/>`;
+  });
+  const ty=H-(target/maxV)*(H-12);
+  s+=`<line x1="0" y1="${ty.toFixed(1)}" x2="${W}" y2="${ty.toFixed(1)}" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.5"/>`;
+  $(svgId).innerHTML=s;
+}
+function renderCharts(){
+  // Weight: scale dots + smoothed trend line + goal line
+  const pts=weights.slice(-30), svg=$("chW");
+  if(pts.length<2){
+    svg.innerHTML=""; $("chWcap").textContent="Log at least 2 weigh-ins to see the trend line.";
+  } else {
+    const sm=pts.map((p,i)=>{ const w=pts.slice(Math.max(0,i-6),i+1); return w.reduce((a,b)=>a+b.kg,0)/w.length; });
+    let mn=Math.min(...pts.map(p=>p.kg),...sm), mx=Math.max(...pts.map(p=>p.kg),...sm);
+    const showGoal=TARGET_W>mn-1.5 && TARGET_W<mx+1.5;
+    if(showGoal){ mn=Math.min(mn,TARGET_W); mx=Math.max(mx,TARGET_W); }
+    mn-=0.3; mx+=0.3;
+    const X=i=>(i/(pts.length-1))*300, Y=v=>110-((v-mn)/(mx-mn))*98-6;
+    let s="";
+    if(showGoal) s+=`<line x1="0" y1="${Y(TARGET_W).toFixed(1)}" x2="300" y2="${Y(TARGET_W).toFixed(1)}" stroke="var(--green)" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.7"/>`;
+    pts.forEach((p,i)=>{ s+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(p.kg).toFixed(1)}" r="2.6" fill="#9AA6C0"/>`; });
+    s+=`<path d="${sm.map((v,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round"/>`;
+    svg.innerHTML=s;
+    $("chWcap").textContent=`Dots = scale · Blue line = trend (what matters) · ${pts[0].date.slice(5)} → ${pts[pts.length-1].date.slice(5)}`+(showGoal?` · dashed = goal ${TARGET_W} kg`:"");
+  }
+  // Calories + protein: last 14 days
+  const days=[];
+  for(let i=13;i>=0;i--){ const dm=load(K_DAY(i),[]); days.push({s:sum(dm),logged:dm.length>0}); }
+  barsChart("chK", days.map(d=>({v:d.s.kcal,logged:d.logged})), T.kcal, v=>v<=T.kcal*1.05);
+  barsChart("chP", days.map(d=>({v:d.s.p,logged:d.logged})), T.protein, v=>v>=T.protein*0.89);
+}
+
+// ── export: full CSV report ──────────────────────────────────
+function exportCSV(){
+  const rows=[["type","date","time","name","kcal","protein_g","carbs_g","fat_g","gluten_flag"]];
+  const keys=Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).sort();
+  keys.forEach(k=>{
+    const date=k.slice(7);
+    const dm=load(k,[]);
+    if(!dm.length) return;
+    dm.forEach(m=>rows.push(["MEAL",date,m.time||"",m.name,Math.round(m.kcal),Math.round(m.p),Math.round(m.c),Math.round(m.f),m.gluten||"none"]));
+    const s=sum(dm);
+    rows.push(["DAY_TOTAL",date,"","Daily total ("+dm.length+" meals)",Math.round(s.kcal),Math.round(s.p),Math.round(s.c),Math.round(s.f),
+      s.kcal<=T.kcal*1.05?"on target":"over by "+Math.round(s.kcal-T.kcal)]);
+  });
+  weights.forEach(w=>rows.push(["WEIGHT",w.date,"","Morning weigh-in",w.kg,"","","",""]));
+  if(rows.length===1){ toast("Nothing to export yet"); return; }
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\r\n");
+  const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="fuellog-report-"+iso(new Date())+".csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  toast("Report downloaded");
+}
+$("expBtn").onclick=exportCSV;
 
 // ── tabs ─────────────────────────────────────────────────────
 $("tabToday").onclick=()=>{ $("viewToday").classList.remove("hidden"); $("viewProg").classList.add("hidden"); $("tabToday").classList.add("on"); $("tabProg").classList.remove("on"); };
