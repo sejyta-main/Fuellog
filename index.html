@@ -320,6 +320,41 @@ const FOODS = [
   {n:"Actimel bottle", u:"unit", per:1, kcal:70,p:2.8,c:10.5,f:1.5},
   {n:"Granola, certified GF (muesli swap)", u:"g", per:100, kcal:471,p:10,c:64,f:20},
   {n:"Avocado, 1 slice (~20g)", u:"unit", per:1, kcal:32,p:0.4,c:1.7,f:2.9},
+  // ── fruits ──
+  {n:"Apple", u:"g", per:100, kcal:52,p:0.3,c:14,f:0.2},
+  {n:"Orange, 1 medium", u:"unit", per:1, kcal:62,p:1.2,c:15.4,f:0.2},
+  {n:"Mandarin / clementine, 1", u:"unit", per:1, kcal:35,p:0.5,c:9,f:0.2},
+  {n:"Pear", u:"g", per:100, kcal:57,p:0.4,c:15.2,f:0.1},
+  {n:"Grapes", u:"g", per:100, kcal:69,p:0.7,c:18.1,f:0.2},
+  {n:"Pineapple", u:"g", per:100, kcal:50,p:0.5,c:13.1,f:0.1},
+  {n:"Watermelon", u:"g", per:100, kcal:30,p:0.6,c:7.6,f:0.2},
+  {n:"Mango", u:"g", per:100, kcal:60,p:0.8,c:15,f:0.4},
+  {n:"Blueberries", u:"g", per:100, kcal:57,p:0.7,c:14.5,f:0.3},
+  {n:"Raspberries", u:"g", per:100, kcal:52,p:1.2,c:11.9,f:0.7},
+  // ── grains & carbs (all GF) ──
+  {n:"Oats, certified GF (dry)", u:"g", per:100, kcal:379,p:13.2,c:67.7,f:6.5},
+  {n:"Rice cake, 1", u:"unit", per:1, kcal:35,p:0.7,c:7.3,f:0.3},
+  {n:"Buckwheat, cooked", u:"g", per:100, kcal:92,p:3.4,c:19.9,f:0.6},
+  {n:"Potato, boiled", u:"g", per:100, kcal:87,p:1.9,c:20.1,f:0.1},
+  {n:"Sweet corn, cooked", u:"g", per:100, kcal:96,p:3.4,c:21,f:1.5},
+  {n:"Lentils, cooked", u:"g", per:100, kcal:116,p:9,c:20.1,f:0.4},
+  {n:"Chickpeas, cooked", u:"g", per:100, kcal:164,p:8.9,c:27.4,f:2.6},
+  // ── proteins ──
+  {n:"Salmon, cooked", u:"g", per:100, kcal:206,p:22,c:0,f:12.4},
+  {n:"Tuna, canned in water (drained)", u:"g", per:100, kcal:116,p:25.5,c:0,f:0.8},
+  {n:"White fish (cod), cooked", u:"g", per:100, kcal:105,p:23,c:0,f:0.9},
+  {n:"Shrimp, cooked", u:"g", per:100, kcal:99,p:24,c:0.2,f:0.3},
+  {n:"Sardines in oil (drained)", u:"g", per:100, kcal:208,p:24.6,c:0,f:11.5},
+  {n:"Pork tenderloin, cooked", u:"g", per:100, kcal:143,p:26,c:0,f:3.5},
+  {n:"Turkey breast, cooked", u:"g", per:100, kcal:147,p:30,c:0,f:2},
+  {n:"Egg white, 1", u:"unit", per:1, kcal:17,p:3.6,c:0.2,f:0.1},
+  {n:"Cottage cheese 2%", u:"g", per:100, kcal:84,p:11,c:4.3,f:2.3},
+  // ── fats & extras ──
+  {n:"Peanut butter", u:"tbsp", per:1, kcal:94,p:4,c:3.5,f:8},
+  {n:"Walnuts", u:"g", per:100, kcal:654,p:15.2,c:13.7,f:65.2},
+  {n:"Cashews", u:"g", per:100, kcal:553,p:18.2,c:30.2,f:43.8},
+  {n:"Honey", u:"tbsp", per:1, kcal:64,p:0,c:17.3,f:0},
+  {n:"Dark chocolate 85%, 1 square (~10g)", u:"unit", per:1, kcal:60,p:1,c:3.5,f:4.5},
 ];
 const SEED_FAVS = [
   {name:"Post-workout shake",kcal:420,p:45,c:32,f:12},
@@ -562,14 +597,22 @@ async function offFetch(q){
     return p.product_name && n["energy-kcal_100g"]!=null && n["proteins_100g"]!=null;
   });
 }
+function localMatches(q){
+  const qT=norm(q).split(" ");
+  return FOODS.map((f,i)=>({i,f,sc:scoreName(f.n,qT)}))
+    .filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc).slice(0,6);
+}
+function localHTML(q){
+  return localMatches(q).map(x=>
+    `<button class="fav" data-stap="${x.i}"><b>🏠 ${esc(x.f.n)}</b><small>${x.f.kcal} kcal · ${x.f.p}P /${x.f.per>1?x.f.per:""}${x.f.u}</small></button>`).join("");
+}
 async function runSearch(qRaw){
   const seq=++searchSeq;
-  const q=norm(qRaw); if(q.length<3) return;
+  const q=norm(qRaw); if(q.length<2) return;
   const qTokens=q.split(" ");
-  // local staples in the same box (instant, offline)
-  const localHits=FOODS.map((f,i)=>({i,f,sc:scoreName(f.n,qTokens)}))
-    .filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc).slice(0,3);
-  $("offResults").innerHTML='<div class="muted">Searching…</div>';
+  const localPart=localHTML(qRaw);
+  if(q.length<3){ $("offResults").innerHTML=localPart; return; }   // network from 3 chars
+  $("offResults").innerHTML=localPart+'<div class="muted" id="offNetStub">Searching online…</div>';
   $("offPick").classList.add("hidden"); offSelected=null;
   let prods=[], netFail=false;
   try{
@@ -587,11 +630,9 @@ async function runSearch(qRaw){
   const ranked=prods.map(p=>({p,sc:scoreName(p.product_name+" "+(p.brands||""),qTokens)}))
     .sort((a,b)=>b.sc-a.sc||((+b.p.unique_scans_n||0)-(+a.p.unique_scans_n||0)))
     .slice(0,6).map(x=>x.p);
-  let html="";
-  if(localHits.length) html+=localHits.map(x=>
-    `<button class="fav" data-stap="${x.i}"><b>🏠 ${esc(x.f.n)}</b><small>${x.f.kcal} kcal /${x.f.per>1?x.f.per:""}${x.f.u}</small></button>`).join("");
+  let netHtml="";
   if(ranked.length){
-    html+=ranked.map((p,i)=>{
+    netHtml=ranked.map((p,i)=>{
       const n=p.nutriments, gl=(p.allergens_tags||[]).includes("en:gluten");
       return `<button class="fav" data-off="${i}"><b>${gl?"⚠️ ":""}${esc(p.product_name)}${p.brands?` <span class="muted">(${esc(String(p.brands).split(",")[0])})</span>`:""}</b><small>${Math.round(n["energy-kcal_100g"])} kcal · ${Math.round(n["proteins_100g"])}P /100g</small></button>`;
     }).join("");
@@ -601,27 +642,38 @@ async function runSearch(qRaw){
       p:+p.nutriments["proteins_100g"]||0,
       c:+p.nutriments["carbohydrates_100g"]||0,
       f:+p.nutriments["fat_100g"]||0,
+      per:100, u:"g",
       gluten:(p.allergens_tags||[]).includes("en:gluten")
     })));
+  } else {
+    netHtml = netFail
+      ? '<div class="flag amber">Couldn\'t reach the online database — your 🏠 offline foods above still work.</div>'
+      : (localPart ? '' : '<div class="muted">Nothing found — try one simple word (e.g. "yogurt"), or use the staples list below.</div>');
   }
-  if(!html){
-    html = netFail
-      ? '<div class="flag amber">Couldn\'t reach the food database. If you\'re previewing this inside Claude, external searches are blocked by its sandbox — the search works once the app is opened in a normal browser (your GitHub Pages link). Your 🏠 staples below always work.</div>'
-      : '<div class="muted">Nothing found — try one simple word (e.g. "yogurt"), or use the staples list below.</div>';
-  }
-  $("offResults").innerHTML=html;
+  $("offResults").innerHTML=localPart+netHtml;
 }
 $("offQ").addEventListener("input",()=>{
   clearTimeout(debTimer);
   const v=$("offQ").value.trim();
-  if(v.length<3){ $("offResults").innerHTML=""; return; }
-  debTimer=setTimeout(()=>runSearch(v),450);
+  if(v.length<2){ $("offResults").innerHTML=""; return; }
+  // instant offline matches on every keystroke
+  $("offResults").innerHTML=localHTML(v)+(v.length>=3?'<div class="muted">Searching online…</div>':"");
+  if(v.length>=3) debTimer=setTimeout(()=>runSearch(v),450);
 });
 $("offGo").onclick=()=>runSearch($("offQ").value.trim());
 $("offQ").addEventListener("keydown",e=>{ if(e.key==="Enter") runSearch($("offQ").value.trim()); });
+// tapping an offline food → straight to quantity entry (correct unit)
 document.addEventListener("click",e=>{
   const st=e.target.closest("[data-stap]");
-  if(st){ $("foodSel").value=st.dataset.stap; $("offResults").innerHTML=""; $("foodQty").focus(); }
+  if(!st) return;
+  const f=FOODS[+st.dataset.stap];
+  offSelected={name:f.n,kcal:f.kcal,p:f.p,c:f.c,f:f.f,per:f.per,u:f.u,gluten:false};
+  const unitWord=f.per>1?f.u:("number of "+f.u+(f.u==="unit"?"s (pieces)":"s"));
+  $("offPickName").innerHTML="🏠 Selected: <b>"+esc(f.n)+"</b> — enter "+unitWord+":";
+  $("offGrams").placeholder=f.per>1?f.u:f.u+"s";
+  $("offPick").classList.remove("hidden");
+  $("offResults").innerHTML="";
+  $("offGrams").focus();
 });
 document.addEventListener("click",e=>{
   const r=e.target.closest("[data-off]");
@@ -630,15 +682,18 @@ document.addEventListener("click",e=>{
   offSelected=cache[+r.dataset.off];
   if(!offSelected) return;
   $("offPickName").innerHTML=(offSelected.gluten?"⚠️ <b>Contains gluten.</b> ":"")+"Selected: <b>"+esc(offSelected.name)+"</b> — enter grams:";
+  $("offGrams").placeholder="grams";
   $("offPick").classList.remove("hidden");
   $("offGrams").focus();
 });
 $("offAdd").onclick=()=>{
   if(!offSelected) return;
-  const g=parseFloat($("offGrams").value); if(!g||g<=0) return;
-  const m=g/100;
-  build.push({ label:g+"g "+offSelected.name,
-    m:{kcal:offSelected.kcal*m,p:offSelected.p*m,c:offSelected.c*m,f:offSelected.f*m},
+  const q=parseFloat($("offGrams").value); if(!q||q<=0) return;
+  const per=offSelected.per||100, u=offSelected.u||"g";
+  const mult=q/per;
+  const label=per>1 ? q+u+" "+offSelected.name : q+" × "+offSelected.name;
+  build.push({ label,
+    m:{kcal:offSelected.kcal*mult,p:offSelected.p*mult,c:offSelected.c*mult,f:offSelected.f*mult},
     gluten:offSelected.gluten });
   $("offGrams").value=""; $("offPick").classList.add("hidden");
   $("offResults").innerHTML=""; $("offQ").value=""; offSelected=null;
