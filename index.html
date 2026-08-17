@@ -202,6 +202,7 @@
         <input id="descIn" placeholder='Describe: "150g chicken, 200g sweet potato"' style="margin-bottom:8px">
         <button class="btn full ghost" id="descGo">Estimate with AI</button>
         <div id="aiStatus" class="tiny"></div>
+        <button class="btn ghost full" id="aiTest" style="margin-top:8px">Test AI connection</button>
         <button class="btn ghost full" id="keyClear" style="margin-top:8px">Remove key</button>
       </div>
     </div>
@@ -677,25 +678,76 @@ $("keySave").onclick=()=>{
   apiKey=k; localStorage.setItem("fl:key",k); $("keyInput").value=""; refreshAIPanel();
   toast("AI enabled via "+(isGeminiKey(k)?"Gemini":"Claude"));
 };
-$("keyClear").onclick=()=>{ apiKey=""; localStorage.removeItem("fl:key"); refreshAIPanel(); };
+$("keyClear").onclick=()=>{ apiKey=""; localStorage.removeItem("fl:key"); localStorage.removeItem("fl:gmodel"); refreshAIPanel(); };
+$("aiTest").onclick=async()=>{
+  $("aiStatus").textContent="Testing connection…";
+  try{
+    if(isGeminiKey(apiKey)){
+      localStorage.removeItem("fl:gmodel");
+      const m=await discoverGeminiModel();
+      $("aiStatus").textContent="✓ Connected. Your key will use: "+m;
+    } else {
+      const r=await askAI([{type:"text",text:'Reply ONLY with JSON: {"name":"ok","items":[],"kcal":1,"protein":0,"carbs":0,"fat":0,"gluten_risk":"none","gluten_note":""}'}]);
+      $("aiStatus").textContent=r&&r.name?"✓ Connected (Anthropic).":"✗ Unexpected response.";
+    }
+  }catch(e){ $("aiStatus").textContent="✗ "+e.message; }
+};
 
 const SPEC=`Respond ONLY with JSON, no markdown: {"name":"short meal name","items":[{"item":"...","est":"portion"}],"kcal":0,"protein":0,"carbs":0,"fat":0,"gluten_risk":"none|possible|likely","gluten_note":"one sentence or empty"}`;
 function extractJson(text){
   const clean=text.replace(/```json|```/g,"").trim();
   return JSON.parse(clean.slice(clean.indexOf("{"),clean.lastIndexOf("}")+1));
 }
+// Google retires model names regularly; discover what THIS key can use.
+async function discoverGeminiModel(){
+  const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=50",
+    {headers:{"x-goog-api-key":apiKey}});
+  if(!res.ok){
+    const e=await res.json().catch(()=>({}));
+    throw new Error("model list "+res.status+(e.error&&e.error.message?" — "+e.error.message.slice(0,140):""));
+  }
+  const data=await res.json();
+  const rank=n=>{
+    let s=0;
+    const v=(n.match(/gemini-(\d+(?:\.\d+)?)/)||[])[1];
+    s+=v?parseFloat(v)*10:0;                                  // newest family first
+    if(/flash/.test(n))s+=5;                                  // flash = fast + free tier
+    if(/lite/.test(n))s-=1;                                   // full flash over lite
+    if(/preview|exp/.test(n))s-=2;                            // stable over preview
+    if(/image|live|audio|tts|embed|imagen|veo|nano|banana/.test(n))s-=1000; // wrong modality
+    return s;
+  };
+  const cand=(data.models||[])
+    .filter(m=>(m.supportedGenerationMethods||[]).includes("generateContent"))
+    .map(m=>m.name.replace(/^models\//,""))
+    .sort((a,b)=>rank(b)-rank(a))[0];
+  if(!cand) throw new Error("no text model available on this key");
+  localStorage.setItem("fl:gmodel",cand);
+  return cand;
+}
+const geminiCall=(model,parts)=>fetch(
+  "https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",
+  { method:"POST", headers:{"Content-Type":"application/json","x-goog-api-key":apiKey},
+    body:JSON.stringify({contents:[{parts}]}) });
 async function askAI(content){
   if(isGeminiKey(apiKey)){
-    // Google Gemini (free tier via AI Studio)
     const parts=content.map(b=> b.type==="image"
       ? {inline_data:{mime_type:b.source.media_type,data:b.source.data}}
       : {text:b.text});
-    const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",{
-      method:"POST",
-      headers:{ "Content-Type":"application/json","x-goog-api-key":apiKey },
-      body:JSON.stringify({ contents:[{parts}] })
-    });
-    if(!res.ok) throw new Error("Gemini "+res.status+(res.status===429?" (rate limit — wait a minute)":""));
+    let model=localStorage.getItem("fl:gmodel");
+    if(!model) model=await discoverGeminiModel();
+    let res=await geminiCall(model,parts);
+    if(res.status===404){                                     // model retired → rediscover once
+      localStorage.removeItem("fl:gmodel");
+      model=await discoverGeminiModel();
+      res=await geminiCall(model,parts);
+    }
+    if(!res.ok){
+      const e=await res.json().catch(()=>({}));
+      throw new Error("Gemini "+res.status
+        +(res.status===429?" (free-tier rate limit — wait a minute)":"")
+        +(e.error&&e.error.message?" — "+e.error.message.slice(0,140):""));
+    }
     const data=await res.json();
     const text=((data.candidates||[])[0]?.content?.parts||[]).map(p=>p.text||"").join("\n");
     if(!text) throw new Error("empty Gemini response");
