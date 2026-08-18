@@ -226,7 +226,14 @@
     </div>
 
     <div class="card">
-      <div class="h">TODAY'S LOG</div>
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div class="h" id="logTitle" style="margin:0">TODAY'S LOG</div>
+        <div style="display:flex;gap:4px">
+          <button class="mtab" id="dPrev" aria-label="Previous day">‹</button>
+          <button class="mtab" id="dNext" aria-label="Next day">›</button>
+          <button class="mtab" id="dToday">Today</button>
+        </div>
+      </div>
       <div id="mealList"><p class="muted" style="font-size:14px">Nothing yet. Tap <b>⚡ Quick</b> for a repeat meal or <b>🥗 Portions</b> to build one.</p></div>
     </div>
   </div>
@@ -236,10 +243,12 @@
     <div class="card">
       <div class="h">MORNING WEIGHT</div>
       <div class="row">
-        <input id="wIn" type="number" step="0.1" inputmode="decimal" placeholder="e.g. 78.4" aria-label="Weight kg">
-        <button class="btn" id="wLog">Log kg</button>
+        <input id="wIn" type="number" step="0.1" inputmode="decimal" placeholder="kg — e.g. 78.4" aria-label="Weight kg" style="flex:2">
+        <input id="bfIn" type="number" step="0.1" inputmode="decimal" placeholder="BF % (opt)" aria-label="Body fat percent" style="flex:1.4">
+        <button class="btn" id="wLog">Log</button>
       </div>
-      <p class="tiny">Once daily, after waking, before eating. The trend uses a 7-day average so daily jumps don't matter.</p>
+      <p class="tiny">Once daily, after waking, before eating. BF% is optional — add it whenever your scale or a measurement gives it. The trend uses a 7-day average so daily jumps don't matter.</p>
+      <div id="wList" style="margin-top:10px"></div>
     </div>
     <div class="card">
       <div class="h">TREND → 15–17% BF</div>
@@ -256,6 +265,9 @@
       <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">WEIGHT — SCALE vs TREND (30 DAYS)</div>
       <svg id="chW" width="100%" height="110" viewBox="0 0 300 110" preserveAspectRatio="none" aria-label="Weight trend chart"></svg>
       <div class="muted" id="chWcap" style="font-size:11.5px;margin:2px 0 14px"></div>
+      <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">BODY FAT % — LOGGED vs 15–17% GOAL</div>
+      <svg id="chBF" width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Body fat chart"></svg>
+      <div class="muted" id="chBFcap" style="font-size:11.5px;margin:2px 0 14px"></div>
       <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">CALORIES — LAST 14 DAYS vs TARGET</div>
       <svg id="chK" width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Calorie chart"></svg>
       <div class="muted" style="font-size:11.5px;margin:2px 0 14px">Green = at/under 2,250 · Amber = over · Dashed = target · Gray tick = no log</div>
@@ -371,7 +383,9 @@ const K_DAY = off => { const d=new Date(); d.setDate(d.getDate()-off); return "f
 const load = (k,def) => { try{ const v=localStorage.getItem(k); return v?JSON.parse(v):def; }catch{ return def; } };
 const save = (k,v) => { try{ localStorage.setItem(k,JSON.stringify(v)); }catch{ toast("Storage full — could not save"); } };
 
-let meals = load(K_TODAY(),[]);
+let viewDate = iso(new Date());                 // which day the log view shows
+const KV = () => "fl:log:"+viewDate;
+let meals = load(KV(),[]);
 let favs = load("fl:favs",SEED_FAVS);
 let weights = load("fl:weights",[]);
 let build = [];
@@ -433,10 +447,13 @@ function renderToday(){
 
   // flags (adherence-neutral)
   const fl=[]; const h=new Date().getHours();
+  const isToday = viewDate===iso(new Date());
+  $("logTitle").textContent = isToday ? "TODAY'S LOG" : "LOG — "+viewDate.slice(5);
+  $("dNext").disabled=isToday; $("dNext").style.opacity=isToday?0.4:1;
   const gl = meals.filter(m=>m.gluten && m.gluten!=="none");
   if(gl.length) fl.push(["red","Gluten check: "+gl.map(m=>esc(m.name)).join(", ")+". Verify labels — you are strictly gluten-free."]);
   const frac=Math.min(Math.max((h-6)/15,0),1);
-  if(frac>0.35 && s.p < T.protein*frac-30){
+  if(isToday && frac>0.35 && s.p < T.protein*frac-30){
     const rem={kcal:Math.max(T.kcal-s.kcal,0), p:Math.max(T.protein-s.p,0), c:Math.max(T.carbs-s.c,0), f:Math.max(T.fat-s.f,0)};
     sugCache=nextMealSuggestions(rem,h);
     let tip=`Protein tip: you're at <b>${Math.round(s.p)}g</b> with <b>${Math.round(rem.p)}g</b> and ${Math.round(rem.kcal)} kcal still to go.`;
@@ -526,7 +543,7 @@ function renderMacroPanel(){
 function logMeal(m, remember=true){
   const entry={ id:Date.now(), time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),
     name:m.name||"Meal", kcal:+m.kcal||0, p:+m.p||0, c:+m.c||0, f:+m.f||0, gluten:m.gluten||"none" };
-  meals.push(entry); save(K_TODAY(),meals);
+  meals.push(entry); save(KV(),meals);
   if(remember && !favs.some(f=>f.name.toLowerCase()===entry.name.toLowerCase())){
     favs=[{name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f},...favs].slice(0,12);
     save("fl:favs",favs);
@@ -542,6 +559,23 @@ $("bQuick").onclick=()=>togglePanel("panelQuick","bQuick");
 $("bBuild").onclick=()=>togglePanel("panelBuild","bBuild");
 $("bManual").onclick=()=>togglePanel("panelManual","bManual");
 $("bAI").onclick=()=>{ togglePanel("panelAI","bAI"); refreshAIPanel(); };
+
+// ── day navigation (view/edit any past day) ──────────────────
+function gotoDate(dISO){
+  const today=iso(new Date());
+  if(dISO>today) dISO=today;
+  viewDate=dISO; editingId=null; macroView=null;
+  meals=load(KV(),[]);
+  hidePanels(); renderToday();
+}
+function shiftDay(n){
+  const d=new Date(viewDate+"T12:00:00");
+  d.setDate(d.getDate()+n);
+  gotoDate(iso(d));
+}
+$("dPrev").onclick=()=>shiftDay(-1);
+$("dNext").onclick=()=>shiftDay(1);
+$("dToday").onclick=()=>gotoDate(iso(new Date()));
 
 // favorites + delete + edit + macro breakdown (event delegation)
 document.addEventListener("click",e=>{
@@ -563,13 +597,13 @@ document.addEventListener("click",e=>{
       m.name=$("eName").value||m.name;
       m.kcal=+$("eKcal").value||0; m.p=+$("eP").value||0;
       m.c=+$("eC").value||0; m.f=+$("eF").value||0;
-      save(K_TODAY(),meals);
+      save(KV(),meals);
     }
     editingId=null; renderToday(); toast("Entry updated"); return;
   }
   if(e.target.closest("[data-ecancel]")){ editingId=null; renderToday(); return; }
   const del=e.target.closest("[data-del]");
-  if(del){ meals=meals.filter(m=>m.id!=+del.dataset.del); save(K_TODAY(),meals); renderToday(); }
+  if(del){ meals=meals.filter(m=>m.id!=+del.dataset.del); save(KV(),meals); renderToday(); }
 });
 
 // ── food search: typo-tolerant, live, staples + OFF ──────────
@@ -877,13 +911,15 @@ function renderProgress(){
   const curW=weights.length?weights[weights.length-1].kg:START_W;
   const bf=Math.max((curW-LEAN)/curW*100,5);
   const togo=Math.max(curW-TARGET_W,0);
-  $("subline").textContent=`${curW} KG · ~${bf.toFixed(0)}% BF · TARGET 15–17%`;
+  const loggedBF=[...weights].reverse().find(w=>w.bf!=null&&w.bf!=="");
+  $("subline").textContent=`${curW} KG · ${loggedBF?loggedBF.bf+"% BF":"~"+bf.toFixed(0)+"% BF (est)"} · TARGET 15–17%`;
   $("tNow").textContent=l7?l7.toFixed(1)+" kg":"—";
   $("tRate").textContent=rate!=null?(rate>0?"+":"")+rate.toFixed(2):"—";
   $("tEta").textContent=(rate&&rate<-0.05)?Math.ceil(togo/-rate)+" wks":"—";
   $("goalLine").innerHTML=`Goal weight ≈ <b>${TARGET_W} kg</b> (${togo.toFixed(1)} kg of fat to go, holding muscle).`;
 
   renderCharts();
+  renderWeightList();
 
   // adaptive
   let ad="";
@@ -894,13 +930,13 @@ function renderProgress(){
   } else ad=`<div class="flag blue">Log weight for 14 days and FuelLog starts adjusting your calorie target to your real metabolism.</div>`;
   $("adaptive").innerHTML=ad;
 
-  // week + streak
+  // week + streak (rows tappable → open that day's log for editing)
   let html="", streakN=0, broken=false;
   const days=[];
-  for(let i=6;i>=0;i--){ const dm=load(K_DAY(i),[]); days.push({key:K_DAY(i).slice(10),s:sum(dm),logged:dm.length>0}); }
+  for(let i=6;i>=0;i--){ const key=K_DAY(i); const dm=load(key,[]); days.push({key:key.slice(10),isoDate:key.slice(7),s:sum(dm),logged:dm.length>0}); }
   [...days].reverse().forEach(d=>{ if(!broken){ if(d.logged) streakN++; else broken=true; } });
   days.forEach(d=>{
-    html+=`<div class="meal"><span style="font-weight:600;font-size:14px">${d.key}</span>`+
+    html+=`<div class="meal" data-day="${d.isoDate}" role="button" tabindex="0" style="cursor:pointer"><span style="font-weight:600;font-size:14px">${d.key} <span class="muted" style="font-size:11px">✎</span></span>`+
       (d.logged
         ? `<span style="font-size:14px"><span style="color:${d.s.kcal<=T.kcal*1.05?"var(--green)":"var(--amber)"};font-weight:700">${Math.round(d.s.kcal)} kcal</span><span class="muted"> · ${Math.round(d.s.p)}g P</span></span>`
         : `<span class="muted">no log</span>`)+`</div>`;
@@ -908,11 +944,60 @@ function renderProgress(){
   $("weekList").innerHTML=html;
   $("streak").textContent=streakN>0?"🔥 "+streakN+"-day streak":"";
 }
+
+// ── weigh-in history: edit / delete, with optional BF% ───────
+let editingW=null;
+function renderWeightList(){
+  const recent=[...weights].slice(-10).reverse();
+  if(!recent.length){ $("wList").innerHTML=""; return; }
+  $("wList").innerHTML=recent.map(w=> w.date===editingW ? `
+    <div class="meal" style="flex-direction:column;align-items:stretch;gap:6px;padding:10px 0">
+      <div class="muted" style="font-weight:700">${w.date.slice(5)}</div>
+      <div class="row">
+        <input id="ewKg" type="number" step="0.1" value="${w.kg}" aria-label="kg" style="flex:1">
+        <input id="ewBf" type="number" step="0.1" value="${w.bf!=null?w.bf:""}" placeholder="BF %" aria-label="BF percent" style="flex:1">
+        <button class="btn" data-wsave="${w.date}" style="padding:10px 14px">Save</button>
+        <button class="btn ghost" data-wcancel="1" style="padding:10px 12px">✕</button>
+      </div>
+    </div>` : `
+    <div class="meal">
+      <span style="font-weight:600;font-size:14px">${w.date.slice(5)}</span>
+      <span style="display:flex;align-items:center;gap:2px;font-size:14px">
+        <b>${w.kg} kg</b><span class="muted">${w.bf!=null&&w.bf!==""?" · "+w.bf+"% BF":""}</span>
+        <button class="del" data-wedit="${w.date}" aria-label="Edit weigh-in ${w.date}">✎</button>
+        <button class="del" data-wdel="${w.date}" aria-label="Delete weigh-in ${w.date}">✕</button>
+      </span>
+    </div>`).join("");
+}
+document.addEventListener("click",e=>{
+  const dy=e.target.closest("[data-day]");
+  if(dy){ gotoDate(dy.dataset.day); $("tabToday").click(); return; }
+  const we=e.target.closest("[data-wedit]");
+  if(we){ editingW=we.dataset.wedit; renderWeightList(); return; }
+  if(e.target.closest("[data-wcancel]")){ editingW=null; renderWeightList(); return; }
+  const ws=e.target.closest("[data-wsave]");
+  if(ws){
+    const w=weights.find(x=>x.date===ws.dataset.wsave);
+    if(w){
+      const kg=parseFloat($("ewKg").value), bf=parseFloat($("ewBf").value);
+      if(kg&&kg>=40&&kg<=150) w.kg=kg;
+      w.bf=(bf&&bf>=3&&bf<=60)?bf:undefined;
+      save("fl:weights",weights);
+    }
+    editingW=null; renderProgress(); toast("Weigh-in updated"); return;
+  }
+  const wd=e.target.closest("[data-wdel]");
+  if(wd){ weights=weights.filter(x=>x.date!==wd.dataset.wdel); save("fl:weights",weights); renderProgress(); return; }
+});
 $("wLog").onclick=()=>{
   const kg=parseFloat($("wIn").value);
   if(!kg||kg<40||kg>150) return;
-  weights=[...weights.filter(w=>w.date!==iso(new Date())),{date:iso(new Date()),kg}].sort((a,b)=>a.date.localeCompare(b.date));
-  save("fl:weights",weights); $("wIn").value=""; renderProgress(); toast("Weight logged: "+kg+" kg");
+  const bf=parseFloat($("bfIn").value);
+  const entry={date:iso(new Date()),kg};
+  if(bf&&bf>=3&&bf<=60) entry.bf=bf;
+  weights=[...weights.filter(w=>w.date!==entry.date),entry].sort((a,b)=>a.date.localeCompare(b.date));
+  save("fl:weights",weights); $("wIn").value=""; $("bfIn").value="";
+  renderProgress(); toast("Logged: "+kg+" kg"+(entry.bf?" · "+entry.bf+"% BF":""));
 };
 
 // ── trends charts (MacroFactor-style) ────────────────────────
@@ -949,6 +1034,22 @@ function renderCharts(){
     svg.innerHTML=s;
     $("chWcap").textContent=`Dots = scale · Blue line = trend (what matters) · ${pts[0].date.slice(5)} → ${pts[pts.length-1].date.slice(5)}`+(showGoal?` · dashed = goal ${TARGET_W} kg`:"");
   }
+  // Body fat: logged values vs 15–17% goal band
+  const bfPts=weights.filter(w=>w.bf!=null&&w.bf!=="").slice(-30);
+  if(bfPts.length<2){
+    $("chBF").innerHTML="";
+    $("chBFcap").textContent="Log BF% with at least 2 weigh-ins to draw this line.";
+  } else {
+    let mn=Math.min(...bfPts.map(p=>p.bf),15)-0.5, mx=Math.max(...bfPts.map(p=>p.bf),17)+0.5;
+    const X=i=>(i/(bfPts.length-1))*300, Y=v=>90-((v-mn)/(mx-mn))*80-5;
+    let s=`<rect x="0" y="${Y(17).toFixed(1)}" width="300" height="${(Y(15)-Y(17)).toFixed(1)}" fill="#188A5618"/>`;
+    s+=`<line x1="0" y1="${Y(17).toFixed(1)}" x2="300" y2="${Y(17).toFixed(1)}" stroke="var(--green)" stroke-width="1" stroke-dasharray="4 4" opacity=".6"/>`;
+    s+=`<line x1="0" y1="${Y(15).toFixed(1)}" x2="300" y2="${Y(15).toFixed(1)}" stroke="var(--green)" stroke-width="1" stroke-dasharray="4 4" opacity=".6"/>`;
+    s+=`<path d="${bfPts.map((p,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(p.bf).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--orange)" stroke-width="2.5" stroke-linecap="round"/>`;
+    bfPts.forEach((p,i)=>{ s+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(p.bf).toFixed(1)}" r="2.6" fill="var(--orange)"/>`; });
+    $("chBF").innerHTML=s;
+    $("chBFcap").textContent=`${bfPts[0].bf}% → ${bfPts[bfPts.length-1].bf}% · green band = your 15–17% goal zone`;
+  }
   // Calories + protein: last 14 days
   const days=[];
   for(let i=13;i>=0;i--){ const dm=load(K_DAY(i),[]); days.push({s:sum(dm),logged:dm.length>0}); }
@@ -969,7 +1070,7 @@ function exportCSV(){
     rows.push(["DAY_TOTAL",date,"","Daily total ("+dm.length+" meals)",Math.round(s.kcal),Math.round(s.p),Math.round(s.c),Math.round(s.f),
       s.kcal<=T.kcal*1.05?"on target":"over by "+Math.round(s.kcal-T.kcal)]);
   });
-  weights.forEach(w=>rows.push(["WEIGHT",w.date,"","Morning weigh-in",w.kg,"","","",""]));
+  weights.forEach(w=>rows.push(["WEIGHT",w.date,"","Morning weigh-in"+(w.bf!=null&&w.bf!==""?" ("+w.bf+"% BF)":""),w.kg,"","","",""]));
   if(rows.length===1){ toast("Nothing to export yet"); return; }
   const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\r\n");
   const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
