@@ -130,8 +130,9 @@
     <!-- QUICK -->
     <div class="card hidden" id="panelQuick">
       <div class="muted" style="font-weight:700;letter-spacing:1px;font-size:12px;margin-bottom:8px">TAP TO LOG — YOUR REPEAT MEALS</div>
+      <input id="favQ" placeholder="Search your meals…" aria-label="Search repeat meals" style="margin-bottom:8px">
       <div id="favList"></div>
-      <p class="tiny">Meals you log by Portions or Manual are saved here automatically.</p>
+      <p class="tiny">Keeps your last 30 logged meals (about 3 days). Search by any word — typos OK. ✕ removes a meal from this list only, never from your logs.</p>
     </div>
 
     <!-- PORTION BUILDER -->
@@ -504,11 +505,26 @@ function renderToday(){
     </div>`).join("")
     : '<p class="muted" style="font-size:14px">Nothing yet. Tap <b>⚡ Quick</b> for a repeat meal or <b>🥗 Portions</b> to build one.</p>';
 
-  // favorites
-  $("favList").innerHTML = favs.map((f,i)=>`
-    <button class="fav" data-fav="${i}"><b>${esc(f.name)}</b><small>${f.kcal} kcal · ${f.p}P</small></button>`).join("");
+  // favorites (searchable — see renderFavs)
+  renderFavs();
 
   renderMacroPanel();
+}
+
+// ── quick list: fuzzy search + per-item remove ───────────────
+function renderFavs(){
+  const q=($("favQ").value||"").trim();
+  let list=favs.map((f,i)=>({f,i}));
+  if(q.length>=1){
+    const qT=norm(q).split(" ");
+    list=list.map(x=>({...x,sc:scoreName(x.f.name,qT)})).filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc);
+  }
+  $("favList").innerHTML = list.length ? list.map(x=>`
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <button class="fav" style="margin-bottom:0;flex:1" data-fav="${x.i}"><b>${esc(x.f.name)}</b><small>${x.f.kcal} kcal · ${x.f.p}P</small></button>
+      <button class="del" data-fdel="${x.i}" aria-label="Remove ${esc(x.f.name)} from quick list" style="border:1px solid var(--line);border-radius:10px;padding:0 12px">✕</button>
+    </div>`).join("")
+    : '<p class="muted" style="font-size:13px;margin:0">No matches — try fewer letters.</p>';
 }
 
 // ── macro breakdown (tap PROTEIN/CARBS/FAT) ──────────────────
@@ -545,7 +561,7 @@ function logMeal(m, remember=true){
     name:m.name||"Meal", kcal:+m.kcal||0, p:+m.p||0, c:+m.c||0, f:+m.f||0, gluten:m.gluten||"none" };
   meals.push(entry); save(KV(),meals);
   if(remember && !favs.some(f=>f.name.toLowerCase()===entry.name.toLowerCase())){
-    favs=[{name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f},...favs].slice(0,12);
+    favs=[{name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f},...favs].slice(0,30);
     save("fl:favs",favs);
   }
   hidePanels(); renderToday(); toast("Logged: "+entry.name);
@@ -555,7 +571,8 @@ function logMeal(m, remember=true){
 const panels=["panelQuick","panelBuild","panelManual","panelAI"];
 function hidePanels(){ panels.forEach(p=>$(p).classList.add("hidden")); ["bQuick","bBuild","bManual","bAI"].forEach(b=>$(b).classList.remove("on")); }
 function togglePanel(p,b){ const el=$(p),was=!el.classList.contains("hidden"); hidePanels(); if(!was){ el.classList.remove("hidden"); $(b).classList.add("on"); } }
-$("bQuick").onclick=()=>togglePanel("panelQuick","bQuick");
+$("bQuick").onclick=()=>{ togglePanel("panelQuick","bQuick"); if(!$("panelQuick").classList.contains("hidden")){ $("favQ").value=""; renderFavs(); } };
+$("favQ").addEventListener("input",renderFavs);
 $("bBuild").onclick=()=>togglePanel("panelBuild","bBuild");
 $("bManual").onclick=()=>togglePanel("panelManual","bManual");
 $("bAI").onclick=()=>{ togglePanel("panelAI","bAI"); refreshAIPanel(); };
@@ -586,6 +603,8 @@ document.addEventListener("click",e=>{
   const mt=e.target.closest("[data-mtab]");
   if(mt){ macroView=mt.dataset.mtab; renderMacroPanel(); return; }
   if(e.target.closest("[data-mclose]")){ macroView=null; renderMacroPanel(); return; }
+  const fd=e.target.closest("[data-fdel]");
+  if(fd){ favs.splice(+fd.dataset.fdel,1); save("fl:favs",favs); renderFavs(); return; }
   const fav=e.target.closest("[data-fav]");
   if(fav){ logMeal(favs[+fav.dataset.fav], false); return; }
   const ed=e.target.closest("[data-edit]");
