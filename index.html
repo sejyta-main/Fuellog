@@ -196,10 +196,16 @@
         <p class="tiny">Key is stored only on this device. Never publish a page containing your key. Note: on Gemini's free tier, Google may use your prompts (incl. meal photos) to improve their models — use Portions/Search if you prefer full privacy.</p>
       </div>
       <div id="aiReady" class="hidden">
-        <label class="btn full" style="display:block;text-align:center;margin-bottom:8px">
-          📷 Scan a meal photo
-          <input id="photoIn" type="file" accept="image/*" class="hidden">
-        </label>
+        <div class="row" style="margin-bottom:8px">
+          <label class="btn" style="flex:1;text-align:center;display:block">
+            📷 Camera
+            <input id="photoCam" type="file" accept="image/*" capture="environment" class="hidden">
+          </label>
+          <label class="btn ghost" style="flex:1;text-align:center;display:block">
+            🖼 Gallery
+            <input id="photoIn" type="file" accept="image/*" class="hidden">
+          </label>
+        </div>
         <input id="descIn" placeholder='Describe: "150g chicken, 200g sweet potato"' style="margin-bottom:8px">
         <button class="btn full ghost" id="descGo">Estimate with AI</button>
         <div id="aiStatus" class="tiny"></div>
@@ -511,7 +517,8 @@ function renderToday(){
   renderMacroPanel();
 }
 
-// ── quick list: fuzzy search + per-item remove ───────────────
+// ── quick list: fuzzy search + per-item remove + portion scale ─
+let scalingIdx=null;
 function renderFavs(){
   const q=($("favQ").value||"").trim();
   let list=favs.map((f,i)=>({f,i}));
@@ -521,10 +528,24 @@ function renderFavs(){
   }
   $("favList").innerHTML = list.length ? list.map(x=>`
     <div style="display:flex;gap:6px;margin-bottom:6px">
-      <button class="fav" style="margin-bottom:0;flex:1" data-fav="${x.i}"><b>${esc(x.f.name)}</b><small>${x.f.kcal} kcal · ${x.f.p}P</small></button>
-      <button class="del" data-fdel="${x.i}" aria-label="Remove ${esc(x.f.name)} from quick list" style="border:1px solid var(--line);border-radius:10px;padding:0 12px">✕</button>
-    </div>`).join("")
+      <button class="fav" style="margin-bottom:0;flex:1" data-fav="${x.i}"><b>${esc(x.f.name)}</b><small>${Math.round(x.f.kcal)} kcal · ${Math.round(x.f.p)}P</small></button>
+      <button class="del" data-fscale="${x.i}" aria-label="Adjust portion of ${esc(x.f.name)}" style="border:1px solid var(--line);border-radius:10px;padding:0 10px">⚖</button>
+      <button class="del" data-fdel="${x.i}" aria-label="Remove ${esc(x.f.name)} from quick list" style="border:1px solid var(--line);border-radius:10px;padding:0 10px">✕</button>
+    </div>`
+    + (scalingIdx===x.i ? `
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:-2px 0 10px;padding:8px;background:var(--bg);border-radius:10px">
+      <span class="muted" style="font-size:11.5px;width:100%">Portion of the usual amount:</span>
+      ${[0.5,0.75,1.25,1.5,2].map(v=>`<button class="mtab" data-fslog="${v}" data-fsi="${x.i}">×${v}</button>`).join("")}
+      <input id="fsVal" type="number" step="0.05" min="0.05" placeholder="×?" aria-label="Custom multiplier" style="width:74px;flex:none;padding:7px 8px">
+      <button class="btn" data-fslogc="${x.i}" style="padding:8px 14px">Log</button>
+      <button class="btn ghost" data-fscancel="1" style="padding:8px 10px">Cancel</button>
+    </div>` : "")).join("")
     : '<p class="muted" style="font-size:13px;margin:0">No matches — try fewer letters.</p>';
+}
+function logScaled(f,factor){
+  if(!f||!factor||factor<=0) return;
+  scalingIdx=null;
+  logMeal({ name:f.name+(factor!==1?" ×"+factor:""), kcal:f.kcal*factor, p:f.p*factor, c:f.c*factor, f:f.f*factor }, false);
 }
 
 // ── macro breakdown (tap PROTEIN/CARBS/FAT) ──────────────────
@@ -571,7 +592,7 @@ function logMeal(m, remember=true){
 const panels=["panelQuick","panelBuild","panelManual","panelAI"];
 function hidePanels(){ panels.forEach(p=>$(p).classList.add("hidden")); ["bQuick","bBuild","bManual","bAI"].forEach(b=>$(b).classList.remove("on")); }
 function togglePanel(p,b){ const el=$(p),was=!el.classList.contains("hidden"); hidePanels(); if(!was){ el.classList.remove("hidden"); $(b).classList.add("on"); } }
-$("bQuick").onclick=()=>{ togglePanel("panelQuick","bQuick"); if(!$("panelQuick").classList.contains("hidden")){ $("favQ").value=""; renderFavs(); } };
+$("bQuick").onclick=()=>{ togglePanel("panelQuick","bQuick"); if(!$("panelQuick").classList.contains("hidden")){ $("favQ").value=""; scalingIdx=null; renderFavs(); } };
 $("favQ").addEventListener("input",renderFavs);
 $("bBuild").onclick=()=>togglePanel("panelBuild","bBuild");
 $("bManual").onclick=()=>togglePanel("panelManual","bManual");
@@ -603,8 +624,15 @@ document.addEventListener("click",e=>{
   const mt=e.target.closest("[data-mtab]");
   if(mt){ macroView=mt.dataset.mtab; renderMacroPanel(); return; }
   if(e.target.closest("[data-mclose]")){ macroView=null; renderMacroPanel(); return; }
+  const fsc=e.target.closest("[data-fscale]");
+  if(fsc){ scalingIdx = scalingIdx===+fsc.dataset.fscale ? null : +fsc.dataset.fscale; renderFavs(); return; }
+  const fsl=e.target.closest("[data-fslog]");
+  if(fsl){ logScaled(favs[+fsl.dataset.fsi], parseFloat(fsl.dataset.fslog)); return; }
+  const fslc=e.target.closest("[data-fslogc]");
+  if(fslc){ logScaled(favs[+fslc.dataset.fslogc], parseFloat($("fsVal").value)); return; }
+  if(e.target.closest("[data-fscancel]")){ scalingIdx=null; renderFavs(); return; }
   const fd=e.target.closest("[data-fdel]");
-  if(fd){ favs.splice(+fd.dataset.fdel,1); save("fl:favs",favs); renderFavs(); return; }
+  if(fd){ favs.splice(+fd.dataset.fdel,1); save("fl:favs",favs); scalingIdx=null; renderFavs(); return; }
   const fav=e.target.closest("[data-fav]");
   if(fav){ logMeal(favs[+fav.dataset.fav], false); return; }
   const ed=e.target.closest("[data-edit]");
@@ -901,8 +929,8 @@ $("pdLog").onclick=()=>{ if(!pending) return;
 };
 $("pdDiscard").onclick=()=>{ pending=null; $("panelPending").classList.add("hidden"); };
 
-$("photoIn").addEventListener("change",async e=>{
-  const f=e.target.files&&e.target.files[0]; e.target.value=""; if(!f) return;
+async function handlePhotoFile(f){
+  if(!f) return;
   $("aiStatus").textContent="Analyzing photo…";
   try{
     const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(f); });
@@ -912,7 +940,9 @@ $("photoIn").addEventListener("change",async e=>{
     ]);
     $("aiStatus").textContent=""; showPending(r);
   }catch(err){ $("aiStatus").textContent="Analysis failed ("+err.message+"). Check the key and connection."; }
-});
+}
+$("photoIn").addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; handlePhotoFile(f); });
+$("photoCam").addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; handlePhotoFile(f); });
 $("descGo").onclick=async()=>{
   const txt=$("descIn").value.trim(); if(!txt) return;
   $("aiStatus").textContent="Estimating…";
@@ -952,7 +982,7 @@ function renderProgress(){
   // week + streak (rows tappable → open that day's log for editing)
   let html="", streakN=0, broken=false;
   const days=[];
-  for(let i=6;i>=0;i--){ const key=K_DAY(i); const dm=load(key,[]); days.push({key:key.slice(10),isoDate:key.slice(7),s:sum(dm),logged:dm.length>0}); }
+  for(let i=6;i>=0;i--){ const key=K_DAY(i); const dm=load(key,[]); days.push({key:key.slice(12),isoDate:key.slice(7),s:sum(dm),logged:dm.length>0}); }
   [...days].reverse().forEach(d=>{ if(!broken){ if(d.logged) streakN++; else broken=true; } });
   days.forEach(d=>{
     html+=`<div class="meal" data-day="${d.isoDate}" role="button" tabindex="0" style="cursor:pointer"><span style="font-weight:600;font-size:14px">${d.key} <span class="muted" style="font-size:11px">✎</span></span>`+
@@ -990,7 +1020,7 @@ function renderWeightList(){
 }
 document.addEventListener("click",e=>{
   const dy=e.target.closest("[data-day]");
-  if(dy){ gotoDate(dy.dataset.day); $("tabToday").click(); return; }
+  if(dy){ gotoDate(dy.dataset.day); showTab("today"); return; }
   const we=e.target.closest("[data-wedit]");
   if(we){ editingW=we.dataset.wedit; renderWeightList(); return; }
   if(e.target.closest("[data-wcancel]")){ editingW=null; renderWeightList(); return; }
@@ -1103,8 +1133,18 @@ function exportCSV(){
 $("expBtn").onclick=exportCSV;
 
 // ── tabs ─────────────────────────────────────────────────────
-$("tabToday").onclick=()=>{ $("viewToday").classList.remove("hidden"); $("viewProg").classList.add("hidden"); $("tabToday").classList.add("on"); $("tabProg").classList.remove("on"); };
-$("tabProg").onclick=()=>{ $("viewProg").classList.remove("hidden"); $("viewToday").classList.add("hidden"); $("tabProg").classList.add("on"); $("tabToday").classList.remove("on"); renderProgress(); };
+// ── tabs (error-proof: switching always works even if a render fails) ──
+function showTab(t){
+  const today = t==="today";
+  $("viewToday").classList.toggle("hidden",!today);
+  $("viewProg").classList.toggle("hidden",today);
+  $("tabToday").classList.toggle("on",today);
+  $("tabProg").classList.toggle("on",!today);
+  try{ today ? renderToday() : renderProgress(); }
+  catch(err){ console.error("render error:",err); }
+}
+$("tabToday").addEventListener("click",()=>showTab("today"));
+$("tabProg").addEventListener("click",()=>showTab("prog"));
 
 // init
 renderToday(); renderBuild(); renderProgress();
