@@ -89,6 +89,7 @@
   <!-- TODAY -->
   <div id="viewToday">
     <div class="card" style="text-align:center">
+      <div data-macro="kcal" role="button" tabindex="0" aria-label="Show calories by meal" style="cursor:pointer">
       <svg width="196" height="196" viewBox="0 0 196 196" style="margin:0 auto;display:block">
         <circle cx="98" cy="98" r="80" fill="none" stroke="var(--line)" stroke-width="13"/>
         <circle id="ringArc" cx="98" cy="98" r="80" fill="none" stroke="var(--orange)" stroke-width="13"
@@ -98,18 +99,20 @@
         <text id="ringLab" x="98" y="116" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink-soft)" letter-spacing="1.5">KCAL LEFT</text>
         <text id="ringSub" x="98" y="134" text-anchor="middle" font-size="11" fill="var(--ink-soft)">0 / 2250</text>
       </svg>
+      </div>
       <div class="row" style="margin-top:14px;gap:12px">
         <div class="mrow" data-macro="p" role="button" tabindex="0" style="cursor:pointer"><div class="mhead"><span>PROTEIN ▾</span><span id="pV">0/180</span></div><div class="bar"><i id="pB" style="background:var(--orange);width:0%"></i></div></div>
         <div class="mrow" data-macro="c" role="button" tabindex="0" style="cursor:pointer"><div class="mhead"><span>CARBS ▾</span><span id="cV">0/240</span></div><div class="bar"><i id="cB" style="background:var(--blue);width:0%"></i></div></div>
         <div class="mrow" data-macro="f" role="button" tabindex="0" style="cursor:pointer"><div class="mhead"><span>FAT ▾</span><span id="fV">0/70</span></div><div class="bar"><i id="fB" style="background:var(--amber);width:0%"></i></div></div>
       </div>
-      <div class="muted" style="font-size:11px;margin-top:8px">Tap a macro to see which meals drove it</div>
+      <div class="muted" style="font-size:11px;margin-top:8px">Tap the ring or a macro to see which meals drove it</div>
     </div>
 
     <!-- MACRO BREAKDOWN -->
     <div class="card hidden" id="panelMacro">
       <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
         <div style="display:flex;gap:6px">
+          <button class="mtab" data-mtab="kcal">Calories</button>
           <button class="mtab" data-mtab="p">Protein</button>
           <button class="mtab" data-mtab="c">Carbs</button>
           <button class="mtab" data-mtab="f">Fat</button>
@@ -550,7 +553,8 @@ function logScaled(f,factor){
 
 // ── macro breakdown (tap PROTEIN/CARBS/FAT) ──────────────────
 let macroView=null; // null | 'p' | 'c' | 'f'
-const MACRO_META={ p:{label:"PROTEIN",unit:"g",target:()=>T.protein,color:"var(--orange)"},
+const MACRO_META={ kcal:{label:"CALORIES",unit:" kcal",target:()=>T.kcal,color:"var(--orange)"},
+                   p:{label:"PROTEIN",unit:"g",target:()=>T.protein,color:"var(--orange)"},
                    c:{label:"CARBS",unit:"g",target:()=>T.carbs,color:"var(--blue)"},
                    f:{label:"FAT",unit:"g",target:()=>T.fat,color:"var(--amber)"} };
 function renderMacroPanel(){
