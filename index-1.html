@@ -491,6 +491,13 @@ function renderToday(){
   $("mealList").innerHTML = meals.length ? meals.map(m=> m.id===editingId ? `
     <div class="meal" style="flex-direction:column;align-items:stretch;gap:8px;padding:12px 0">
       <input id="eName" value="${esc(m.name)}" aria-label="Meal name">
+      ${m.g?`<div class="row" style="align-items:center">
+        <input id="eG" type="number" inputmode="decimal" value="${Math.round(m.g)}" aria-label="Total grams" style="flex:1">
+        <span class="muted" style="font-size:11.5px;flex:2.2;line-height:1.35">g total — change it and calories + macros recalculate automatically</span>
+      </div>`:`<div class="row" style="align-items:center">
+        <input id="eScale" type="number" step="0.05" min="0.05" inputmode="decimal" placeholder="× 0.75" aria-label="Scale factor" style="flex:1">
+        <span class="muted" style="font-size:11.5px;flex:2.2;line-height:1.35">no grams stored for this entry — type a factor (0.75 = ate ¾ of it) to rescale everything</span>
+      </div>`}
       <div class="grid4">
         <div class="mcell"><input id="eKcal" type="number" value="${Math.round(m.kcal)}" aria-label="kcal"><div class="mlab">KCAL</div></div>
         <div class="mcell"><input id="eP" type="number" value="${Math.round(m.p)}" aria-label="protein"><div class="mlab">PROT g</div></div>
@@ -505,7 +512,7 @@ function renderToday(){
     <div class="meal">
       <div style="min-width:0">
         <div style="font-weight:600;font-size:14px">${m.gluten&&m.gluten!=="none"?"⚠️ ":""}${esc(m.name)}</div>
-        <div class="muted">${m.time} · ${Math.round(m.kcal)} kcal · ${Math.round(m.p)}P/${Math.round(m.c)}C/${Math.round(m.f)}F</div>
+        <div class="muted">${m.time} · ${m.g?Math.round(m.g)+"g · ":""}${Math.round(m.kcal)} kcal · ${Math.round(m.p)}P/${Math.round(m.c)}C/${Math.round(m.f)}F</div>
       </div>
       <div style="display:flex;flex-shrink:0">
         <button class="del" data-edit="${m.id}" aria-label="Edit ${esc(m.name)}">✎</button>
@@ -548,7 +555,7 @@ function renderFavs(){
 function logScaled(f,factor){
   if(!f||!factor||factor<=0) return;
   scalingIdx=null;
-  logMeal({ name:f.name+(factor!==1?" ×"+factor:""), kcal:f.kcal*factor, p:f.p*factor, c:f.c*factor, f:f.f*factor }, false);
+  logMeal({ name:f.name+(factor!==1?" ×"+factor:""), kcal:f.kcal*factor, p:f.p*factor, c:f.c*factor, f:f.f*factor, g:f.g?f.g*factor:undefined }, false);
 }
 
 // ── macro breakdown (tap PROTEIN/CARBS/FAT) ──────────────────
@@ -584,9 +591,10 @@ function renderMacroPanel(){
 function logMeal(m, remember=true){
   const entry={ id:Date.now(), time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),
     name:m.name||"Meal", kcal:+m.kcal||0, p:+m.p||0, c:+m.c||0, f:+m.f||0, gluten:m.gluten||"none" };
+  if(+m.g>0) entry.g=Math.round(+m.g);
   meals.push(entry); save(KV(),meals);
   if(remember && !favs.some(f=>f.name.toLowerCase()===entry.name.toLowerCase())){
-    favs=[{name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f},...favs].slice(0,30);
+    favs=[{name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f,g:entry.g},...favs].slice(0,30);
     save("fl:favs",favs);
   }
   hidePanels(); renderToday(); toast("Logged: "+entry.name);
@@ -619,6 +627,20 @@ $("dPrev").onclick=()=>shiftDay(-1);
 $("dNext").onclick=()=>shiftDay(1);
 $("dToday").onclick=()=>gotoDate(iso(new Date()));
 
+// live recalc while editing: grams or × factor drive the four macro fields
+document.addEventListener("input",e=>{
+  if(e.target.id!=="eG" && e.target.id!=="eScale") return;
+  const m=meals.find(x=>x.id===editingId); if(!m) return;
+  let factor=null;
+  if(e.target.id==="eG"){ const gv=parseFloat(e.target.value); if(gv>0&&m.g>0) factor=gv/m.g; }
+  else { const sv=parseFloat(e.target.value); if(sv>0) factor=sv; }
+  if(factor==null) return;
+  $("eKcal").value=Math.round(m.kcal*factor);
+  $("eP").value=Math.round(m.p*factor);
+  $("eC").value=Math.round(m.c*factor);
+  $("eF").value=Math.round(m.f*factor);
+});
+
 // favorites + delete + edit + macro breakdown (event delegation)
 document.addEventListener("click",e=>{
   const sg=e.target.closest("[data-sug]");
@@ -648,6 +670,8 @@ document.addEventListener("click",e=>{
       m.name=$("eName").value||m.name;
       m.kcal=+$("eKcal").value||0; m.p=+$("eP").value||0;
       m.c=+$("eC").value||0; m.f=+$("eF").value||0;
+      const gEl=document.getElementById("eG");
+      if(gEl){ const gv=parseFloat(gEl.value); if(gv>0) m.g=Math.round(gv); }
       save(KV(),meals);
     }
     editingId=null; renderToday(); toast("Entry updated"); return;
@@ -778,6 +802,7 @@ $("offAdd").onclick=()=>{
   const mult=q/per;
   const label=per>1 ? q+u+" "+offSelected.name : q+" × "+offSelected.name;
   build.push({ label,
+    g:(u==="g"||u==="ml")?q:null,
     m:{kcal:offSelected.kcal*mult,p:offSelected.p*mult,c:offSelected.c*mult,f:offSelected.f*mult},
     gluten:offSelected.gluten });
   $("offGrams").value=""; $("offPick").classList.add("hidden");
@@ -801,7 +826,7 @@ $("foodAdd").onclick=()=>{
   const f=FOODS[+$("foodSel").value]; const q=parseFloat($("foodQty").value);
   if(!q||q<=0) return;
   const mult=q/f.per;
-  build.push({ label:q+f.u+" "+f.n, m:{kcal:f.kcal*mult,p:f.p*mult,c:f.c*mult,f:f.f*mult} });
+  build.push({ label:q+f.u+" "+f.n, g:(f.u==="g"||f.u==="ml")?q:null, m:{kcal:f.kcal*mult,p:f.p*mult,c:f.c*mult,f:f.f*mult} });
   $("foodQty").value=""; renderBuild();
 };
 $("buildClear").onclick=()=>{ build=[]; renderBuild(); };
@@ -809,7 +834,9 @@ $("buildLog").onclick=()=>{
   if(!build.length) return;
   const s=sum(build.map(b=>b.m));
   const hasGluten=build.some(b=>b.gluten);
-  logMeal({ name:$("buildName").value||"Built meal", kcal:Math.round(s.kcal), p:Math.round(s.p), c:Math.round(s.c), f:Math.round(s.f), gluten:hasGluten?"likely":"none" });
+  const allG=build.every(b=>b.g!=null);
+  const totalG=allG?build.reduce((a,b)=>a+b.g,0):null;
+  logMeal({ name:$("buildName").value||"Built meal", kcal:Math.round(s.kcal), p:Math.round(s.p), c:Math.round(s.c), f:Math.round(s.f), g:totalG, gluten:hasGluten?"likely":"none" });
   build=[]; $("buildName").value=""; renderBuild();
 };
 
