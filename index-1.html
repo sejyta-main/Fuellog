@@ -135,7 +135,7 @@
       <div class="muted" style="font-weight:700;letter-spacing:1px;font-size:12px;margin-bottom:8px">TAP TO LOG — YOUR REPEAT MEALS</div>
       <input id="favQ" placeholder="Search your meals…" aria-label="Search repeat meals" style="margin-bottom:8px">
       <div id="favList"></div>
-      <p class="tiny">Keeps your last 30 logged meals (about 3 days). Search by any word — typos OK. ✕ removes a meal from this list only, never from your logs.</p>
+      <p class="tiny">Keeps your last 200 logged meals (weeks of history). Search by any word — typos OK. ✕ removes a meal from this list only, never from your logs.</p>
     </div>
 
     <!-- PORTION BUILDER -->
@@ -594,7 +594,7 @@ function logMeal(m, remember=true){
   if(+m.g>0) entry.g=Math.round(+m.g);
   meals.push(entry); save(KV(),meals);
   if(remember && !favs.some(f=>f.name.toLowerCase()===entry.name.toLowerCase())){
-    favs=[{name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f,g:entry.g},...favs].slice(0,30);
+    favs=[{name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f,g:entry.g},...favs].slice(0,200);
     save("fl:favs",favs);
   }
   hidePanels(); renderToday(); toast("Logged: "+entry.name);
