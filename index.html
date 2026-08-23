@@ -135,7 +135,7 @@
       <div class="muted" style="font-weight:700;letter-spacing:1px;font-size:12px;margin-bottom:8px">TAP TO LOG — YOUR REPEAT MEALS</div>
       <input id="favQ" placeholder="Search your meals…" aria-label="Search repeat meals" style="margin-bottom:8px">
       <div id="favList"></div>
-      <p class="tiny">Keeps your last 30 logged meals (about 3 days). Search by any word — typos OK. ✕ removes a meal from this list only, never from your logs.</p>
+      <p class="tiny">Keeps your last 200 logged meals (weeks of history). Search by any word — typos OK. ✕ removes a meal from this list only, never from your logs.</p>
     </div>
 
     <!-- PORTION BUILDER -->
@@ -535,10 +535,12 @@ function renderFavs(){
   if(q.length>=1){
     const qT=norm(q).split(" ");
     list=list.map(x=>({...x,sc:scoreName(x.f.name,qT)})).filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc);
+  } else {
+    list.sort((a,b)=>((b.f.n||1)-(a.f.n||1)) || ((b.f.t||0)-(a.f.t||0)));
   }
   $("favList").innerHTML = list.length ? list.map(x=>`
     <div style="display:flex;gap:6px;margin-bottom:6px">
-      <button class="fav" style="margin-bottom:0;flex:1" data-fav="${x.i}"><b>${esc(x.f.name)}</b><small>${Math.round(x.f.kcal)} kcal · ${Math.round(x.f.p)}P</small></button>
+      <button class="fav" style="margin-bottom:0;flex:1" data-fav="${x.i}"><b>${esc(x.f.name)}</b><small>${Math.round(x.f.kcal)} kcal · ${Math.round(x.f.p)}P${(x.f.n||1)>1?" · "+x.f.n+"\u00d7":""}</small></button>
       <button class="del" data-fscale="${x.i}" aria-label="Adjust portion of ${esc(x.f.name)}" style="border:1px solid var(--line);border-radius:10px;padding:0 10px">⚖</button>
       <button class="del" data-fdel="${x.i}" aria-label="Remove ${esc(x.f.name)} from quick list" style="border:1px solid var(--line);border-radius:10px;padding:0 10px">✕</button>
     </div>`
@@ -593,8 +595,17 @@ function logMeal(m, remember=true){
     name:m.name||"Meal", kcal:+m.kcal||0, p:+m.p||0, c:+m.c||0, f:+m.f||0, gluten:m.gluten||"none" };
   if(+m.g>0) entry.g=Math.round(+m.g);
   meals.push(entry); save(KV(),meals);
-  if(remember && !favs.some(f=>f.name.toLowerCase()===entry.name.toLowerCase())){
-    favs=[{name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f,g:entry.g},...favs].slice(0,30);
+  // usage tracking: every log of a known meal bumps its count (scaled names match their base)
+  const baseName=entry.name.replace(/\s×[\d.]+$/,"").toLowerCase();
+  const ex=favs.find(f=>{const fn=f.name.toLowerCase(); return fn===baseName||fn===entry.name.toLowerCase();});
+  if(ex){ ex.n=(ex.n||1)+1; ex.t=Date.now(); save("fl:favs",favs); }
+  else if(remember){
+    favs.unshift({name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f,g:entry.g,n:1,t:Date.now()});
+    if(favs.length>200){
+      let wi=0,ws=Infinity;
+      favs.forEach((f,i)=>{ const s=(f.n||1)*1e13+(f.t||0); if(s<ws){ws=s;wi=i;} });
+      favs.splice(wi,1);
+    }
     save("fl:favs",favs);
   }
   hidePanels(); renderToday(); toast("Logged: "+entry.name);
