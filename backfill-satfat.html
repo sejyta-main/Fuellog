@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FuelLog — Saturated Fat Backfill</title>
+<style>
+  body{font-family:system-ui,sans-serif;background:#EEF1F7;color:#16233F;margin:0;padding:24px 16px}
+  .card{max-width:460px;margin:0 auto;background:#fff;border:1px solid #DFE4EF;border-radius:14px;padding:20px}
+  h1{font-size:22px;margin:0 0 6px}
+  p{font-size:14px;line-height:1.5;color:#5A6784}
+  button{background:#F2600C;color:#fff;border:none;border-radius:10px;padding:14px 18px;font-size:15px;font-weight:700;cursor:pointer;width:100%;margin-top:10px}
+  #out{font-size:13.5px;line-height:1.6;margin-top:14px;white-space:pre-wrap;color:#16233F}
+  .ok{color:#188A56;font-weight:700}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Saturated-fat backfill</h1>
+  <p>One-time tool: adds estimated saturated-fat values to every meal already in your FuelLog history on this device, so the stacked fat chart works for past days too. Meals that already have a value are never touched. Safe to run twice.</p>
+  <button id="go">Run backfill</button>
+  <div id="out"></div>
+</div>
+<script>
+"use strict";
+// keyword → saturated share of that meal's total fat (order matters: first match wins)
+const RULES=[
+  [/coconut|coco\b/,0.85],
+  [/oat barista|almond milk|campina/,0.15],
+  [/shake/,0.20],
+  [/skyr|whey|casein|creatine|actimel/,0.60],
+  [/bugles|palomitas|popcorn/,0.50],
+  [/granola|callebaut|choco|nutella|waffle|cake|galletas|gourmet|oreo|dame blanche|frozen yogurt/,0.55],
+  [/musli|muesli|quaker/,0.20],
+  [/milbona|oikos|oykos|yogur|leche|milk|capuchino|cappuccino|chai/,0.63],
+  [/pecan|almendra|almond|chia|nuez|cashew|walnut/,0.09],
+  [/huevo|egg/,0.31],
+  [/meatball/,0.42],
+  [/burger|carne|picadillo|gyro|beef|steak/,0.40],
+  [/cochinita|tocino|jam[oó]n|prosciutto|pork|cerdo/,0.36],
+  [/wok/,0.20],
+  [/pollo|chicken|kip|muslo|salchicha|nugget|turkey|pavo/,0.29],
+  [/tuna|at[uú]n|insalatissime|salmon|sardina|fish|cod|shrimp/,0.20],
+  [/fries|frites|papas|chips|patat/,0.22],
+  [/falafel|tortilla|couscous|rice|arroz|aubergine|noodle/,0.18],
+  [/aguacate|avocado/,0.15],
+  [/olive|aceituna/,0.13],
+  [/banana|pl[aá]tano|kiwi|berr|manzana|apple|fresa|fruit|uva/,0.10],
+  [/cava|wine|beer|tea|t[eé]\b|agua|water/,0.0],
+];
+const ratioFor=n=>{ const s=(n||"").toLowerCase(); for(const [re,r] of RULES) if(re.test(s)) return r; return 0.30; };
+
+document.getElementById("go").onclick=()=>{
+  let daysTouched=0, mealsPatched=0, mealsSkipped=0, favsPatched=0;
+  const keys=Object.keys(localStorage).filter(k=>k.startsWith("fl:log:"));
+  keys.forEach(k=>{
+    let meals; try{ meals=JSON.parse(localStorage.getItem(k)||"[]"); }catch{ return; }
+    if(!Array.isArray(meals)||!meals.length) return;
+    let changed=false;
+    meals.forEach(m=>{
+      if(m.sf!=null){ mealsSkipped++; return; }
+      const f=+m.f||0;
+      if(f<=0){ m.sf=0; changed=true; return; }
+      m.sf=Math.round(f*ratioFor(m.name)*10)/10;
+      mealsPatched++; changed=true;
+    });
+    if(changed){ localStorage.setItem(k,JSON.stringify(meals)); daysTouched++; }
+  });
+  // also patch quick-list favorites so future one-tap logs carry sf
+  try{
+    const favs=JSON.parse(localStorage.getItem("fl:favs")||"[]");
+    favs.forEach(f=>{
+      if(f.sf==null){ f.sf=Math.round((+f.f||0)*ratioFor(f.name)*10)/10; favsPatched++; }
+    });
+    localStorage.setItem("fl:favs",JSON.stringify(favs));
+  }catch{}
+  document.getElementById("out").innerHTML=
+    `<span class="ok">✓ Done.</span>\n`+
+    `Days updated: ${daysTouched}\n`+
+    `Meals patched with estimates: ${mealsPatched}\n`+
+    `Meals already had values (untouched): ${mealsSkipped}\n`+
+    `Quick-list meals patched: ${favsPatched}\n\n`+
+    `Open FuelLog and check the fat chart — the solid saturated segments now appear on past days. You can delete backfill-satfat.html from the repo whenever you like.`;
+};
+</script>
+</body>
+</html>
