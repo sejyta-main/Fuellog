@@ -284,7 +284,10 @@
       <div class="muted" style="font-size:11.5px;margin:2px 0 14px">Green = at/under 2,250 · Amber = over · Dashed = target · Gray tick = no log</div>
       <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">PROTEIN — LAST 14 DAYS vs 180 G</div>
       <svg id="chP" width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Protein chart"></svg>
-      <div class="muted" style="font-size:11.5px;margin:2px 0 0">Green = 160g+ (muscle protected) · Amber = under · Dashed = 180g</div>
+      <div class="muted" style="font-size:11.5px;margin:2px 0 14px">Green = 160g+ (muscle protected) · Amber = under · Dashed = 180g</div>
+      <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">FAT — LAST 14 DAYS vs 70 G</div>
+      <svg id="chFat" width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Fat chart"></svg>
+      <div class="muted" style="font-size:11.5px;margin:2px 0 0">Green = at/under ~75g · Amber = over · Dashed = 70g target</div>
     </div>
     <div class="card">
       <div class="h">EXPORT</div>
@@ -1147,6 +1150,7 @@ function renderCharts(){
   for(let i=13;i>=0;i--){ const dm=load(K_DAY(i),[]); days.push({s:sum(dm),logged:dm.length>0}); }
   barsChart("chK", days.map(d=>({v:d.s.kcal,logged:d.logged})), T.kcal, v=>v<=T.kcal*1.05);
   barsChart("chP", days.map(d=>({v:d.s.p,logged:d.logged})), T.protein, v=>v>=T.protein*0.89);
+  barsChart("chFat", days.map(d=>({v:d.s.f,logged:d.logged})), T.fat, v=>v<=T.fat*1.1);
 }
 
 // ── export: full CSV report ──────────────────────────────────
