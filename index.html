@@ -268,6 +268,14 @@
         <div class="stat"><div class="v" id="tRate">—</div><div class="l">RATE/WK</div></div>
         <div class="stat"><div class="v" id="tEta">—</div><div class="l">ETA</div></div>
       </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+        <span class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px">CHANGE:</span>
+        <button class="mtab" data-win="7">7d</button>
+        <button class="mtab" data-win="14">14d</button>
+        <button class="mtab" data-win="30">30d</button>
+        <button class="mtab" data-win="all">All</button>
+      </div>
+      <div id="lossLine" style="font-size:14px;line-height:1.5;margin-bottom:8px"></div>
       <div class="muted" id="goalLine" style="font-size:12.5px;margin-top:6px"></div>
       <div id="adaptive" style="margin-top:10px"></div>
     </div>
@@ -1016,6 +1024,7 @@ function renderProgress(){
   $("tEta").textContent=(rate&&rate<-0.05)?Math.ceil(togo/-rate)+" wks":"—";
   $("goalLine").innerHTML=`Goal weight ≈ <b>${TARGET_W} kg</b> (${togo.toFixed(1)} kg of fat to go, holding muscle).`;
 
+  renderLossLine();
   renderCharts();
   renderWeightList();
 
@@ -1042,6 +1051,44 @@ function renderProgress(){
   $("weekList").innerHTML=html;
   $("streak").textContent=streakN>0?"🔥 "+streakN+"-day streak":"";
 }
+
+// ── "how much have I lost" counter with selectable window ────
+let lossWin=localStorage.getItem("fl:lossWin")||"14";
+function renderLossLine(){
+  document.querySelectorAll("[data-win]").forEach(b=>b.classList.toggle("on",b.dataset.win===lossWin));
+  const el=$("lossLine"); if(!el) return;
+  let subset=weights;
+  if(lossWin!=="all"){
+    const d=new Date(); d.setDate(d.getDate()-parseInt(lossWin,10));
+    const cut=iso(d);
+    subset=weights.filter(w=>w.date>=cut);
+  }
+  if(subset.length<2){ el.innerHTML='<span class="muted" style="font-size:13px">Not enough weigh-ins in this window yet — keep logging.</span>'; return; }
+  const avg=a=>a.reduce((x,y)=>x+y.kg,0)/a.length;
+  const wStart=avg(subset.slice(0,Math.min(3,subset.length)));
+  const wEnd=avg(subset.slice(-Math.min(3,subset.length)));
+  const dKg=wEnd-wStart;
+  const bfs=subset.filter(w=>w.bf!=null&&w.bf!=="");
+  let bfPart="";
+  if(bfs.length>=2){
+    const bAvg=a=>a.reduce((x,y)=>x+ +y.bf,0)/a.length;
+    const dBf=bAvg(bfs.slice(-Math.min(3,bfs.length)))-bAvg(bfs.slice(0,Math.min(3,bfs.length)));
+    const up=dBf>0.05, flat=Math.abs(dBf)<=0.05;
+    bfPart=` · <b style="color:${flat?"var(--ink-soft)":(up?"var(--amber)":"var(--green)")}">${flat?"◆":(up?"▲":"▼")} ${Math.abs(dBf).toFixed(1)}% BF</b>`;
+  }
+  const span=lossWin==="all"?`since ${subset[0].date.slice(5)}`:`last ${lossWin} days`;
+  if(dKg<-0.05){
+    el.innerHTML=`<b style="color:var(--green)">▼ ${Math.abs(dKg).toFixed(1)} kg</b>${bfPart} <span class="muted">${span}</span> <span class="muted">· ≈ ${Math.round(Math.abs(dKg)*7700/1000*10)/10}k kcal of fat burned</span>`;
+  } else if(dKg>0.05){
+    el.innerHTML=`<b style="color:var(--amber)">▲ ${dKg.toFixed(1)} kg</b>${bfPart} <span class="muted">${span}</span><div class="muted" style="font-size:12px">Up in this window — often water/salt after big meals. Check the 30d view before judging; if 14d and 30d both point up, we adjust the plan.</div>`;
+  } else {
+    el.innerHTML=`<b style="color:var(--ink-soft)">◆ flat</b>${bfPart} <span class="muted">${span}</span> <span class="muted">· holding steady</span>`;
+  }
+}
+document.addEventListener("click",e=>{
+  const w=e.target.closest("[data-win]");
+  if(w){ lossWin=w.dataset.win; localStorage.setItem("fl:lossWin",lossWin); renderLossLine(); }
+});
 
 // ── weigh-in history: edit / delete, with optional BF% ───────
 let editingW=null;
