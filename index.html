@@ -184,6 +184,10 @@
         <div class="mcell"><input id="mC" type="number" inputmode="numeric" aria-label="carbs g"><div class="mlab">CARB g</div></div>
         <div class="mcell"><input id="mF" type="number" inputmode="numeric" aria-label="fat g"><div class="mlab">FAT g</div></div>
       </div>
+      <div class="row" style="margin-top:8px;align-items:flex-start">
+        <div class="mcell" style="width:112px;flex:none"><input id="mSF" type="number" min="0" step="0.1" inputmode="decimal" placeholder="auto" aria-label="saturated fat g"><div class="mlab">SAT FAT g</div></div>
+        <div class="muted" id="mSFHint" style="font-size:11.5px;line-height:1.35;padding-top:5px">Optional. Leave blank and FuelLog will estimate the split automatically.</div>
+      </div>
       <button class="btn full" id="mLog" style="margin-top:10px">Log meal</button>
     </div>
 
@@ -295,12 +299,12 @@
       <div class="muted" style="font-size:11.5px;margin:2px 0 14px">Green = 160g+ (muscle protected) · Amber = under · Dashed = 180g</div>
       <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">FAT — LAST 14 DAYS vs 70 G</div>
       <svg id="chFat" width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Fat chart"></svg>
-      <div class="muted" style="font-size:11.5px;margin:2px 0 0">Solid bottom = saturated · Light top = unsaturated · Gray dash = 70g total · Red dash = ~25g saturated guide. Older entries logged before this update show as all-light.</div>
+      <div class="muted" style="font-size:11.5px;margin:2px 0 0">Solid bottom = saturated · Light top = derived unsaturated (total fat − saturated) · Gray dash = 70g total · Red dash = ~25g saturated guide. Missing sat-fat values are auto-estimated; stored values always take priority.</div>
     </div>
     <div class="card">
       <div class="h">EXPORT</div>
       <button class="btn full" id="expBtn">⬇ Download full report (CSV)</button>
-      <p class="tiny">Every meal with date, time, name, calories, protein, carbs, fat and gluten flag — plus daily totals and all weigh-ins. Opens in Excel or Google Sheets.</p>
+      <p class="tiny">Every meal with date, time, macros, saturated + derived unsaturated fat, the split basis, and gluten flag — plus daily totals and all weigh-ins. Opens in Excel or Google Sheets.</p>
     </div>
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:8px">
@@ -418,7 +422,7 @@ let apiKey = localStorage.getItem("fl:key")||"";
 // ── helpers ──────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
-const sum = arr => arr.reduce((a,m)=>({kcal:a.kcal+(+m.kcal||0),p:a.p+(+m.p||0),c:a.c+(+m.c||0),f:a.f+(+m.f||0),sf:a.sf+(+m.sf||0)}),{kcal:0,p:0,c:0,f:0,sf:0});
+const sum = arr => arr.reduce((a,m)=>{ const si=satInfo(m); return {kcal:a.kcal+(+m.kcal||0),p:a.p+(+m.p||0),c:a.c+(+m.c||0),f:a.f+(+m.f||0),sf:a.sf+si.sf}; },{kcal:0,p:0,c:0,f:0,sf:0});
 let toastTimer=null;
 function toast(msg){ const t=$("toast"); t.textContent="✓ "+msg; t.classList.add("show"); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"),2200); }
 
@@ -516,6 +520,10 @@ function renderToday(){
         <div class="mcell"><input id="eC" type="number" value="${Math.round(m.c)}" aria-label="carbs"><div class="mlab">CARB g</div></div>
         <div class="mcell"><input id="eF" type="number" value="${Math.round(m.f)}" aria-label="fat"><div class="mlab">FAT g</div></div>
       </div>
+      <div class="row" style="align-items:center">
+        <div class="mcell" style="width:112px;flex:none"><input id="eSF" type="number" min="0" step="0.1" inputmode="decimal" value="${m.sf!=null?Math.round(+m.sf*10)/10:""}" placeholder="auto" aria-label="saturated fat"><div class="mlab">SAT FAT g</div></div>
+        <span class="muted" style="font-size:11.5px;line-height:1.35">${m.sf!=null?"stored value":"blank = auto-estimate on save · current estimate ≈ "+satInfo(m).sf.toFixed(1)+"g"}</span>
+      </div>
       <div class="row">
         <button class="btn" data-esave="${m.id}" style="flex:1">Save changes</button>
         <button class="btn ghost" data-ecancel="1">Cancel</button>
@@ -524,7 +532,7 @@ function renderToday(){
     <div class="meal">
       <div style="min-width:0">
         <div style="font-weight:600;font-size:14px">${m.gluten&&m.gluten!=="none"?"⚠️ ":""}${esc(m.name)}</div>
-        <div class="muted">${m.time} · ${m.g?Math.round(m.g)+"g · ":""}${Math.round(m.kcal)} kcal · ${Math.round(m.p)}P/${Math.round(m.c)}C/${Math.round(m.f)}F</div>
+        <div class="muted">${m.time} · ${m.g?Math.round(m.g)+"g · ":""}${Math.round(m.kcal)} kcal · ${Math.round(m.p)}P/${Math.round(m.c)}C/${Math.round(m.f)}F${(+m.f||0)>0?" · "+satInfo(m).sf.toFixed(1)+" sat / "+satInfo(m).unsat.toFixed(1)+" unsat":""}</div>
       </div>
       <div style="display:flex;flex-shrink:0">
         <button class="del" data-edit="${m.id}" aria-label="Edit ${esc(m.name)}">✎</button>
@@ -569,7 +577,7 @@ function renderFavs(){
 function logScaled(f,factor){
   if(!f||!factor||factor<=0) return;
   scalingIdx=null;
-  logMeal({ name:f.name+(factor!==1?" ×"+factor:""), kcal:f.kcal*factor, p:f.p*factor, c:f.c*factor, f:f.f*factor, sf:f.sf!=null?f.sf*factor:undefined, g:f.g?f.g*factor:undefined }, false);
+  logMeal({ name:f.name+(factor!==1?" ×"+factor:""), kcal:f.kcal*factor, p:f.p*factor, c:f.c*factor, f:f.f*factor, sf:f.sf!=null?f.sf*factor:undefined, sfSource:f.sfSource, sfConfidence:f.sfConfidence, g:f.g?f.g*factor:undefined }, false);
 }
 
 // ── macro breakdown (tap PROTEIN/CARBS/FAT) ──────────────────
@@ -606,14 +614,16 @@ function logMeal(m, remember=true){
   const entry={ id:Date.now(), time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),
     name:m.name||"Meal", kcal:+m.kcal||0, p:+m.p||0, c:+m.c||0, f:+m.f||0, gluten:m.gluten||"none" };
   if(+m.g>0) entry.g=Math.round(+m.g);
-  if(m.sf!=null&&!isNaN(+m.sf)) entry.sf=Math.round(+m.sf*10)/10;
-  meals.push(entry); save(KV(),meals);
+  if(m.sf!=null&&!isNaN(+m.sf)) entry.sf=Math.max(0,Math.min(entry.f,Math.round(+m.sf*10)/10));
+  if(m.sfSource) entry.sfSource=String(m.sfSource).slice(0,80);
+  if(m.sfConfidence) entry.sfConfidence=String(m.sfConfidence).slice(0,16);
+  meals.push(entry); save(KV(),meals); satEstCache.clear();
   // usage tracking: every log of a known meal bumps its count (scaled names match their base)
   const baseName=entry.name.replace(/\s×[\d.]+$/,"").toLowerCase();
   const ex=favs.find(f=>{const fn=f.name.toLowerCase(); return fn===baseName||fn===entry.name.toLowerCase();});
   if(ex){ ex.n=(ex.n||1)+1; ex.t=Date.now(); save("fl:favs",favs); }
   else if(remember){
-    favs.unshift({name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f,sf:entry.sf,g:entry.g,n:1,t:Date.now()});
+    favs.unshift({name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f,sf:entry.sf,sfSource:entry.sfSource,sfConfidence:entry.sfConfidence,g:entry.g,n:1,t:Date.now()});
     if(favs.length>200){
       let wi=0,ws=Infinity;
       favs.forEach((f,i)=>{ const s=(f.n||1)*1e13+(f.t||0); if(s<ws){ws=s;wi=i;} });
@@ -663,6 +673,8 @@ document.addEventListener("input",e=>{
   $("eP").value=Math.round(m.p*factor);
   $("eC").value=Math.round(m.c*factor);
   $("eF").value=Math.round(m.f*factor);
+  const sfEl=document.getElementById("eSF");
+  if(sfEl && m.sf!=null) sfEl.value=Math.round(+m.sf*factor*10)/10;
 });
 
 // favorites + delete + edit + macro breakdown (event delegation)
@@ -694,9 +706,12 @@ document.addEventListener("click",e=>{
       m.name=$("eName").value||m.name;
       m.kcal=+$("eKcal").value||0; m.p=+$("eP").value||0;
       m.c=+$("eC").value||0; m.f=+$("eF").value||0;
+      const sfRaw=$("eSF").value.trim();
+      const si=sfRaw!=="" ? {sf:Math.max(0,Math.min(m.f,+sfRaw||0)),source:"manual value",confidence:"user"} : estimateSatFat(m.name,m.f);
+      m.sf=Math.round(si.sf*10)/10; m.sfSource=si.source; m.sfConfidence=si.confidence;
       const gEl=document.getElementById("eG");
       if(gEl){ const gv=parseFloat(gEl.value); if(gv>0) m.g=Math.round(gv); }
-      save(KV(),meals);
+      save(KV(),meals); satEstCache.clear();
     }
     editingId=null; renderToday(); toast("Entry updated"); return;
   }
@@ -718,6 +733,93 @@ function scoreName(name,qTokens){
   }
   return sc;
 }
+
+// ── saturated-fat split engine ───────────────────────────────
+// FuelLog stores saturated fat when known. "Unsaturated" is the practical
+// remainder: total fat − saturated fat (so label rounding/trans fat can make
+// this an approximation, not a laboratory fatty-acid breakdown).
+const satEstCache=new Map();
+const baseMealName=name=>norm(String(name||"").replace(/\s×[\d.]+$/,""));
+const SAT_RULES=[
+  [/coconut/,0.85,"keyword: coconut fat","medium"],
+  [/callebaut|dark chocolate|chocolate|nutella/,0.62,"keyword: cocoa/palm fat","medium"],
+  [/ice cream|milkshake|dame blanche|birthday cake|waffle|frozen yogurt/,0.55,"keyword: dairy dessert","low"],
+  [/milbona greek 10|oikos|yogurth|yogurt|leche fairebel|capuchino fairebel|actimel/,0.66,"keyword: dairy","medium"],
+  [/skyr/,0.50,"keyword: skyr","medium"],
+  [/almond milk|campina almond|alpro milk almond|capuchino con almond/,0.08,"keyword: almond drink","medium"],
+  [/capuchino oat/,0.12,"keyword: oat drink","medium"],
+  [/whey|casein/,0.60,"keyword: protein powder","medium"],
+  [/granola|muesli|musli/,0.20,"keyword: grain/nut mix","medium"],
+  [/chia/,0.11,"keyword: chia","high"],
+  [/almendr|almond/,0.076,"keyword: almonds","high"],
+  [/pecan/,0.086,"keyword: pecans","high"],
+  [/walnut/,0.093,"keyword: walnuts","high"],
+  [/pumpkin seed/,0.18,"keyword: pumpkin seeds","medium"],
+  [/aguacate|avocado/,0.143,"keyword: avocado","high"],
+  [/green olives/,0.14,"keyword: olives","medium"],
+  [/tortilla espanola/,0.24,"keyword: tortilla española","medium"],
+  [/huevo|egg/,0.333,"keyword: egg","high"],
+  [/prosciutto|jamon|mortadella|tocino/,0.36,"keyword: cured meat","medium"],
+  [/salchich|meatball|burger|gyro|cochinita|picadillo|carne/,0.36,"keyword: mixed meat","low"],
+  [/tuna|insalatissime/,0.20,"keyword: tuna/fish","medium"],
+  [/chicken nugget|milanesa|borek/,0.30,"keyword: prepared/fried food","low"],
+  [/pollo asado|muslo pollo|chicken thigh/,0.29,"keyword: roast/thigh chicken","medium"],
+  [/chicken|pollo|wok chicken/,0.28,"keyword: chicken","medium"],
+  [/falafel|french fries|frites|bugles|chips vinegar|palomitas/,0.14,"keyword: vegetable-oil food","medium"],
+  [/thai|chinese buffet|cena|grilled spiced|grilled and shredded/,0.32,"keyword: mixed restaurant meal","low"],
+  [/creatine|tea|kiwi|fresa|raspberr|blueberr|zanahoria|pepino|banana|platano|baguette|couscous|rice|arroz|sweet potato|potato|butternut/,0.02,"keyword: very-low-sat plant/starch","medium"]
+];
+function estimateSatFat(name,fat){
+  fat=Math.max(0,+fat||0);
+  if(fat<=0) return {sf:0,unsat:0,source:"zero total fat",confidence:"high",estimated:false};
+  const key=baseMealName(name)+"|"+fat.toFixed(1);
+  if(satEstCache.has(key)) return satEstCache.get(key);
+  const base=baseMealName(name);
+  // 1) Carlos's own prior exact-name entries with a recorded sat-fat value.
+  const ratios=[];
+  Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).forEach(k=>{
+    load(k,[]).forEach(x=>{
+      if(baseMealName(x.name)===base && x.sf!=null && +x.f>0) ratios.push(Math.max(0,Math.min(1,+x.sf/+x.f)));
+    });
+  });
+  let ratio,source,confidence;
+  if(ratios.length){
+    ratios.sort((a,b)=>a-b); ratio=ratios[Math.floor(ratios.length/2)];
+    source="history match ("+ratios.length+" recorded)"; confidence="high";
+  } else {
+    // 2) Local USDA food DB: only accept a meaningful token match.
+    const qT=base.split(" ").filter(x=>x.length>2&&!/^\d/.test(x)&&!["the","with","and"].includes(x));
+    const best=FOODS.map(f=>({f,sc:scoreName(f.n,qT)})).sort((a,b)=>b.sc-a.sc)[0];
+    if(best && best.sc>=3 && +best.f.f>0 && best.f.sf!=null){
+      ratio=Math.max(0,Math.min(1,+best.f.sf/+best.f.f)); source="local food DB: "+best.f.n; confidence="high";
+    } else {
+      // 3) Food-type heuristic. This is deliberately labeled as an estimate.
+      const r=SAT_RULES.find(x=>x[0].test(base));
+      if(r){ ratio=r[1]; source=r[2]; confidence=r[3]; }
+      else { ratio=0.30; source="generic mixed-food estimate"; confidence="low"; }
+    }
+  }
+  const sf=Math.round(Math.min(fat,fat*ratio)*10)/10;
+  const out={sf,unsat:Math.round(Math.max(0,fat-sf)*10)/10,source,confidence,estimated:true};
+  satEstCache.set(key,out); return out;
+}
+function satInfo(m){
+  const fat=Math.max(0,+m.f||0);
+  if(m.sf!=null&&!isNaN(+m.sf)){
+    const sf=Math.round(Math.max(0,Math.min(fat,+m.sf))*10)/10;
+    return {sf,unsat:Math.round(Math.max(0,fat-sf)*10)/10,source:m.sfSource||"stored value",confidence:m.sfConfidence||"recorded",estimated:false};
+  }
+  return estimateSatFat(m.name,fat);
+}
+function updateManualSFHint(){
+  const el=$("mSFHint"); if(!el) return;
+  const fat=Math.max(0,+$("mF").value||0), raw=$("mSF").value.trim();
+  if(fat<=0){ el.textContent="Enter total fat first. If fat is 0g, the split is 0g / 0g."; return; }
+  if(raw!==""){ const sf=Math.max(0,Math.min(fat,+raw||0)); el.textContent=`Manual: ${sf.toFixed(1)}g saturated · ${(fat-sf).toFixed(1)}g derived unsaturated.`; return; }
+  const x=estimateSatFat($("mName").value||"Manual entry",fat);
+  el.textContent=`Auto ≈ ${x.sf.toFixed(1)}g saturated · ${x.unsat.toFixed(1)}g unsaturated · ${x.source} (${x.confidence}).`;
+}
+["mName","mF","mSF"].forEach(id=>$(id).addEventListener("input",updateManualSFHint));
 async function offFetch(q){
   const url="https://world.openfoodfacts.org/cgi/search.pl?search_terms="+encodeURIComponent(q)
     +"&search_simple=1&action=process&json=1&page_size=24&sort_by=unique_scans_n"
@@ -862,14 +964,17 @@ $("buildLog").onclick=()=>{
   const allG=build.every(b=>b.g!=null);
   const totalG=allG?build.reduce((a,b)=>a+b.g,0):null;
   const totalSF=build.reduce((a,b)=>a+(b.m.sf||0),0);
-  logMeal({ name:$("buildName").value||"Built meal", kcal:Math.round(s.kcal), p:Math.round(s.p), c:Math.round(s.c), f:Math.round(s.f), sf:Math.round(totalSF*10)/10, g:totalG, gluten:hasGluten?"likely":"none" });
+  logMeal({ name:$("buildName").value||"Built meal", kcal:Math.round(s.kcal), p:Math.round(s.p), c:Math.round(s.c), f:Math.round(s.f), sf:Math.round(totalSF*10)/10, sfSource:"food database / label", sfConfidence:"high", g:totalG, gluten:hasGluten?"likely":"none" });
   build=[]; $("buildName").value=""; renderBuild();
 };
 
 // ── manual ───────────────────────────────────────────────────
 $("mLog").onclick=()=>{
-  logMeal({ name:$("mName").value||"Manual entry", kcal:$("mKcal").value, p:$("mP").value, c:$("mC").value, f:$("mF").value });
-  ["mName","mKcal","mP","mC","mF"].forEach(id=>$(id).value="");
+  const name=$("mName").value||"Manual entry", fat=Math.max(0,+$("mF").value||0), raw=$("mSF").value.trim();
+  const si=raw!=="" ? {sf:Math.max(0,Math.min(fat,+raw||0)),source:"manual value",confidence:"user"} : estimateSatFat(name,fat);
+  logMeal({ name, kcal:$("mKcal").value, p:$("mP").value, c:$("mC").value, f:fat, sf:si.sf, sfSource:si.source, sfConfidence:si.confidence });
+  ["mName","mKcal","mP","mC","mF","mSF"].forEach(id=>$(id).value="");
+  updateManualSFHint();
 };
 
 // ── AI (optional key) ────────────────────────────────────────
@@ -981,7 +1086,7 @@ function showPending(r){
   hidePanels(); $("panelPending").classList.remove("hidden");
 }
 $("pdLog").onclick=()=>{ if(!pending) return;
-  logMeal({ name:$("pdName").value, kcal:$("pdKcal").value, p:$("pdP").value, c:$("pdC").value, f:$("pdF").value, sf:pending.sat_fat, gluten:pending.gluten_risk });
+  logMeal({ name:$("pdName").value, kcal:$("pdKcal").value, p:$("pdP").value, c:$("pdC").value, f:$("pdF").value, sf:pending.sat_fat, sfSource:"AI estimate", sfConfidence:"medium", gluten:pending.gluten_risk });
   pending=null; $("panelPending").classList.add("hidden");
 };
 $("pdDiscard").onclick=()=>{ pending=null; $("panelPending").classList.add("hidden"); };
@@ -1226,18 +1331,22 @@ function renderCharts(){
 
 // ── export: full CSV report ──────────────────────────────────
 function exportCSV(){
-  const rows=[["type","date","time","name","kcal","protein_g","carbs_g","fat_g","gluten_flag"]];
+  const rows=[["type","date","time","name","kcal","protein_g","carbs_g","fat_g","saturated_fat_g","unsaturated_fat_g","fat_split_basis","fat_split_confidence","gluten_flag"]];
   const keys=Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).sort();
   keys.forEach(k=>{
     const date=k.slice(7);
     const dm=load(k,[]);
     if(!dm.length) return;
-    dm.forEach(m=>rows.push(["MEAL",date,m.time||"",m.name,Math.round(m.kcal),Math.round(m.p),Math.round(m.c),Math.round(m.f),m.gluten||"none"]));
-    const s=sum(dm);
-    rows.push(["DAY_TOTAL",date,"","Daily total ("+dm.length+" meals)",Math.round(s.kcal),Math.round(s.p),Math.round(s.c),Math.round(s.f),
+    dm.forEach(m=>{
+      const si=satInfo(m);
+      rows.push(["MEAL",date,m.time||"",m.name,Math.round(m.kcal),Math.round(m.p),Math.round(m.c),Math.round(m.f),si.sf.toFixed(1),si.unsat.toFixed(1),si.source,si.confidence,m.gluten||"none"]);
+    });
+    const s=sum(dm), unsat=Math.round(Math.max(0,s.f-s.sf)*10)/10;
+    const usedEstimate=dm.some(m=>m.sf==null);
+    rows.push(["DAY_TOTAL",date,"","Daily total ("+dm.length+" meals)",Math.round(s.kcal),Math.round(s.p),Math.round(s.c),Math.round(s.f),s.sf.toFixed(1),unsat.toFixed(1),usedEstimate?"daily total; includes auto-estimates":"daily total from stored values",usedEstimate?"mixed":"recorded",
       s.kcal<=T.kcal*1.05?"on target":"over by "+Math.round(s.kcal-T.kcal)]);
   });
-  weights.forEach(w=>rows.push(["WEIGHT",w.date,"","Morning weigh-in"+(w.bf!=null&&w.bf!==""?" ("+w.bf+"% BF)":""),w.kg,"","","",""]));
+  weights.forEach(w=>rows.push(["WEIGHT",w.date,"","Morning weigh-in"+(w.bf!=null&&w.bf!==""?" ("+w.bf+"% BF)":""),w.kg,"","","","","","","",""]));
   if(rows.length===1){ toast("Nothing to export yet"); return; }
   const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\r\n");
   const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
@@ -1246,7 +1355,7 @@ function exportCSV(){
   a.download="fuellog-report-"+iso(new Date())+".csv";
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  toast("Report downloaded");
+  toast("Report downloaded with fat split");
 }
 $("expBtn").onclick=exportCSV;
 
