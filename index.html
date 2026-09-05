@@ -811,6 +811,36 @@ function satInfo(m){
   }
   return estimateSatFat(m.name,fat);
 }
+
+// One-time v2 migration: permanently fill historical meals that are missing sf.
+// Unsaturated fat stays derived (total fat - sf) so edits can never make the split inconsistent.
+function backfillSatFatHistory(){
+  const marker="fl:satBackfill:v2";
+  if(localStorage.getItem(marker)==="done") return 0;
+  const keys=Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).sort();
+  const staged=[];
+  let updated=0;
+  // Stage every estimate first. Nothing is written during this pass, so a newly
+  // estimated meal cannot influence another meal's history-match confidence.
+  keys.forEach(k=>{
+    const dm=load(k,[]); let changed=false;
+    dm.forEach(m=>{
+      if(m.sf==null || isNaN(+m.sf)){
+        const si=estimateSatFat(m.name,+m.f||0);
+        m.sf=Math.round(si.sf*10)/10;
+        m.sfSource="backfill v2 · "+si.source;
+        m.sfConfidence=si.confidence;
+        m.sfEstimated=true;
+        changed=true; updated++;
+      }
+    });
+    if(changed) staged.push([k,dm]);
+  });
+  staged.forEach(([k,dm])=>save(k,dm));
+  localStorage.setItem(marker,"done");
+  satEstCache.clear();
+  return updated;
+}
 function updateManualSFHint(){
   const el=$("mSFHint"); if(!el) return;
   const fat=Math.max(0,+$("mF").value||0), raw=$("mSF").value.trim();
@@ -1374,7 +1404,10 @@ $("tabToday").addEventListener("click",()=>showTab("today"));
 $("tabProg").addEventListener("click",()=>showTab("prog"));
 
 // init
+const satBackfilled=backfillSatFatHistory();
+if(satBackfilled){ meals=load(KV(),[]); }
 renderToday(); renderBuild(); renderProgress();
+if(satBackfilled) setTimeout(()=>toast("Fat history backfilled: "+satBackfilled+" meal"+(satBackfilled===1?"":"s")),120);
 </script>
 </body>
 </html>
