@@ -1,0 +1,66 @@
+name: Apply FuelLog carbs trend chart
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fuellog-carbs-chart.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch index.html
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib, subprocess
+          p=Path('index.html')
+          s=p.read_text()
+          def git_blob_sha(text):
+              b=text.encode()
+              return hashlib.sha1(f'blob {len(b)}\0'.encode()+b).hexdigest()
+          expected='15abe520335959c39ee13ba504ab4418a49526da'
+          assert git_blob_sha(s)==expected, f'Unexpected baseline {git_blob_sha(s)}'
+          old='''      <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">FAT — LAST 14 DAYS vs 70 G</div>
+      <svg id="chFat" width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Fat chart"></svg>
+      <div class="muted" style="font-size:11.5px;margin:2px 0 0">Solid bottom = saturated · Light top = derived unsaturated (total fat − saturated) · Gray dash = 70g total · Red dash = ~25g saturated guide. Missing sat-fat values are auto-estimated; stored values always take priority.</div>'''
+          new='''      <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">FAT — LAST 14 DAYS vs 70 G</div>
+      <svg id="chFat" width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Fat chart"></svg>
+      <div class="muted" style="font-size:11.5px;margin:2px 0 14px">Solid bottom = saturated · Light top = derived unsaturated (total fat − saturated) · Gray dash = 70g total · Red dash = ~25g saturated guide. Missing sat-fat values are auto-estimated; stored values always take priority.</div>
+      <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">CARBS — LAST 14 DAYS vs 240 G</div>
+      <svg id="chC" width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Carbohydrate chart"></svg>
+      <div class="muted" style="font-size:11.5px;margin:2px 0 0">Green = at/under 240g · Amber = over · Dashed = 240g target · Gray tick = no log</div>'''
+          assert s.count(old)==1
+          s=s.replace(old,new)
+          old2='''  barsChart("chP", days.map(d=>({v:d.s.p,logged:d.logged})), T.protein, v=>v>=T.protein*0.89);
+  fatStackChart("chFat", days.map(d=>({v:d.s.f,sf:d.s.sf,logged:d.logged})), T.fat);'''
+          new2='''  barsChart("chP", days.map(d=>({v:d.s.p,logged:d.logged})), T.protein, v=>v>=T.protein*0.89);
+  fatStackChart("chFat", days.map(d=>({v:d.s.f,sf:d.s.sf,logged:d.logged})), T.fat);
+  barsChart("chC", days.map(d=>({v:d.s.c,logged:d.logged})), T.carbs, v=>v<=T.carbs*1.05);'''
+          assert s.count(old2)==1
+          s=s.replace(old2,new2)
+          target='3b1c93ace4868fe09d3756f86cea56d8136ba202'
+          assert git_blob_sha(s)==target, f'Unexpected target {git_blob_sha(s)}'
+          p.write_text(s)
+      - name: Validate JavaScript
+        run: |
+          python - <<'PY'
+          import re, pathlib
+          s=pathlib.Path('index.html').read_text()
+          m=re.search(r'<script>([\s\S]*?)</script>',s)
+          assert m
+          pathlib.Path('/tmp/fuellog.js').write_text(m.group(1))
+          PY
+          node --check /tmp/fuellog.js
+      - name: Commit app change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Add carbohydrate trend chart"
+          git push
