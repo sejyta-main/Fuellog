@@ -1,0 +1,39 @@
+name: Apply verified FuelLog progress patch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-progress-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Apply and validate patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object index.html)" = "3b1c93ace4868fe09d3756f86cea56d8136ba202"
+          git apply --check progress-upgrade.patch
+          git apply progress-upgrade.patch
+          test "$(git hash-object index.html)" = "6853215c53f01d8f31c8598b55f4c6575977b3da"
+          python3 - <<'PY'
+          import re, pathlib, subprocess
+          html=pathlib.Path('index.html').read_text()
+          m=re.search(r'<script>([\s\S]*?)</script>',html)
+          assert m
+          pathlib.Path('/tmp/fuellog.js').write_text(m.group(1))
+          subprocess.run(['node','--check','/tmp/fuellog.js'],check=True)
+          PY
+          git config user.name 'ChatGPT FuelLog updater'
+          git config user.email 'actions@users.noreply.github.com'
+          git add index.html
+          git commit -m 'Add body composition measurements and progress photos'
+          git push origin HEAD:main
