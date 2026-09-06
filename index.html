@@ -299,7 +299,10 @@
       <div class="muted" style="font-size:11.5px;margin:2px 0 14px">Green = 160g+ (muscle protected) · Amber = under · Dashed = 180g</div>
       <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">FAT — LAST 14 DAYS vs 70 G</div>
       <svg id="chFat" width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Fat chart"></svg>
-      <div class="muted" style="font-size:11.5px;margin:2px 0 0">Solid bottom = saturated · Light top = derived unsaturated (total fat − saturated) · Gray dash = 70g total · Red dash = ~25g saturated guide. Missing sat-fat values are auto-estimated; stored values always take priority.</div>
+      <div class="muted" style="font-size:11.5px;margin:2px 0 14px">Solid bottom = saturated · Light top = derived unsaturated (total fat − saturated) · Gray dash = 70g total · Red dash = ~25g saturated guide. Missing sat-fat values are auto-estimated; stored values always take priority.</div>
+      <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">CARBS — LAST 14 DAYS vs 240 G</div>
+      <svg id="chC" width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Carbohydrate chart"></svg>
+      <div class="muted" style="font-size:11.5px;margin:2px 0 0">Green = at/under 240g · Amber = over · Dashed = 240g target · Gray tick = no log</div>
     </div>
     <div class="card">
       <div class="h">EXPORT</div>
@@ -1357,6 +1360,7 @@ function renderCharts(){
   barsChart("chK", days.map(d=>({v:d.s.kcal,logged:d.logged})), T.kcal, v=>v<=T.kcal*1.05);
   barsChart("chP", days.map(d=>({v:d.s.p,logged:d.logged})), T.protein, v=>v>=T.protein*0.89);
   fatStackChart("chFat", days.map(d=>({v:d.s.f,sf:d.s.sf,logged:d.logged})), T.fat);
+  barsChart("chC", days.map(d=>({v:d.s.c,logged:d.logged})), T.carbs, v=>v<=T.carbs*1.05);
 }
 
 // ── export: full CSV report ──────────────────────────────────
