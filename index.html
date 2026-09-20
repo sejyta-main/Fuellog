@@ -68,6 +68,13 @@
   .hidden{display:none !important}
   .mtab{border:1px solid var(--line);background:var(--bg);color:var(--ink-soft);border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
   .mtab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .quick-badge{display:inline-block;background:#2456C814;color:var(--blue);border-radius:999px;padding:2px 6px;font-size:9.5px;font-weight:700;letter-spacing:.4px;margin-left:5px;vertical-align:1px}
+  .chat-list{max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px 0 10px}
+  .chat-msg{max-width:90%;padding:9px 11px;border-radius:11px;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+  .chat-msg.user{align-self:flex-end;background:var(--ink);color:#fff;border-bottom-right-radius:3px}
+  .chat-msg.assistant{align-self:flex-start;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-bottom-left-radius:3px}
+  .select-dot{width:38px;flex:none;border:1px solid var(--line);background:var(--card);border-radius:10px;color:var(--ink-soft);font-weight:700;cursor:pointer}
+  .select-dot.on{background:var(--blue);color:#fff;border-color:var(--blue)}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -133,10 +140,22 @@
 
     <!-- QUICK -->
     <div class="card hidden" id="panelQuick">
-      <div class="muted" style="font-weight:700;letter-spacing:1px;font-size:12px;margin-bottom:8px">TAP TO LOG — YOUR REPEAT MEALS</div>
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <div class="muted" style="font-weight:700;letter-spacing:1px;font-size:12px">TAP TO LOG — YOUR REPEAT MEALS</div>
+        <button class="mtab" id="groupToggle">Create group</button>
+      </div>
+      <div id="groupComposer" class="hidden" style="background:var(--bg);border-radius:10px;padding:10px;margin-bottom:10px">
+        <div class="muted" style="font-size:12px;margin-bottom:7px">Select two or more entries below, then save them as one reusable meal.</div>
+        <input id="groupName" placeholder="Group name — e.g. Morning shake" style="margin-bottom:7px">
+        <div id="groupSummary" class="muted" style="margin-bottom:8px">No entries selected.</div>
+        <div class="row">
+          <button class="btn" id="groupSave" style="flex:1">Save group</button>
+          <button class="btn ghost" id="groupCancel">Cancel</button>
+        </div>
+      </div>
       <input id="favQ" placeholder="Search your meals…" aria-label="Search repeat meals" style="margin-bottom:8px">
       <div id="favList"></div>
-      <p class="tiny">Keeps your last 200 logged meals (weeks of history). Search by any word — typos OK. ✕ removes a meal from this list only, never from your logs.</p>
+      <p class="tiny">Entries common around this time rise to the top automatically. Search by any word — typos OK. ✕ removes a meal from this list only, never from your logs.</p>
     </div>
 
     <!-- PORTION BUILDER -->
@@ -218,6 +237,19 @@
         <input id="descIn" placeholder='Describe: "150g chicken, 200g sweet potato"' style="margin-bottom:8px">
         <button class="btn full ghost" id="descGo">Estimate with AI</button>
         <div id="aiStatus" class="tiny"></div>
+        <div style="border-top:1px solid var(--line);margin:14px 0 10px"></div>
+        <div class="row" style="justify-content:space-between;margin-bottom:6px">
+          <div class="h" style="margin:0">ASK FUELLOG</div>
+          <button class="mtab" id="chatClear">Clear</button>
+        </div>
+        <div class="chat-list" id="chatList">
+          <div class="chat-msg assistant">Ask about today's macros, what to eat next, your recent patterns, or gluten-free choices.</div>
+        </div>
+        <div class="row" style="align-items:stretch">
+          <input id="chatIn" maxlength="1200" placeholder="Ask a nutrition question…" aria-label="Ask FuelLog">
+          <button class="btn" id="chatSend">Send</button>
+        </div>
+        <p class="tiny">Uses today’s log, your targets, and seven daily summaries. Chat stays on this device; questions are sent securely to Gemini. Not medical advice.</p>
         <button class="btn ghost full" id="aiTest" style="margin-top:8px">Test AI connection</button>
         <button class="btn ghost full" id="aiConfigClear" style="margin-top:8px">Change AI service</button>
       </div>
@@ -452,6 +484,7 @@ let build = [];
 let pending = null;
 let editingId = null;
 let aiConfig = load("fl:aiConfig",{url:"",token:""});
+let chatHistory = load("fl:chat",[]).filter(x=>x&&["user","assistant"].includes(x.role)&&x.content).slice(-20);
 // Remove credentials from the retired direct-browser integration.
 localStorage.removeItem("fl:key");
 localStorage.removeItem("fl:gmodel");
@@ -584,8 +617,42 @@ function renderToday(){
   renderMacroPanel();
 }
 
-// ── quick list: fuzzy search + per-item remove + portion scale ─
-let scalingIdx=null;
+// ── quick list: time-aware ranking, groups, search, portion scale ─
+let scalingIdx=null, groupMode=false;
+const groupSelection=new Set();
+const quickKey=name=>String(name||"").replace(/\s×[\d.]+$/," ").replace(/\s+/g," ").trim().toLowerCase();
+function quickTimeStats(now=new Date()){
+  const stats={}, nowH=now.getHours()+now.getMinutes()/60;
+  Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).sort().reverse().slice(0,45).forEach((key,dayIndex)=>{
+    load(key,[]).forEach(m=>{
+      const h=parseHour(m.time); if(h==null) return;
+      const distance=Math.min(Math.abs(h-nowH),24-Math.abs(h-nowH));
+      if(distance>2.25) return;
+      const k=quickKey(m.name); if(!k) return;
+      const stat=stats[k]||(stats[k]={near:0,close:0,recency:0});
+      stat.near+=1;
+      if(distance<=1.1) stat.close+=1;
+      stat.recency+=Math.max(0,45-dayIndex)/45;
+    });
+  });
+  return stats;
+}
+function renderGroupSummary(){
+  const chosen=[...groupSelection].map(i=>favs[i]).filter(Boolean);
+  const s=sum(chosen);
+  $("groupSummary").textContent=chosen.length
+    ? chosen.length+" selected · "+Math.round(s.kcal)+" kcal · "+Math.round(s.p)+"P/"+Math.round(s.c)+"C/"+Math.round(s.f)+"F"
+    : "No entries selected.";
+  $("groupSave").disabled=chosen.length<2;
+}
+function setGroupMode(on){
+  groupMode=!!on; groupSelection.clear(); scalingIdx=null;
+  $("groupComposer").classList.toggle("hidden",!groupMode);
+  $("groupToggle").classList.toggle("on",groupMode);
+  $("groupToggle").textContent=groupMode?"Selecting…":"Create group";
+  if(!groupMode) $("groupName").value="";
+  renderGroupSummary(); renderFavs();
+}
 function renderFavs(){
   const q=($("favQ").value||"").trim();
   let list=favs.map((f,i)=>({f,i}));
@@ -593,28 +660,39 @@ function renderFavs(){
     const qT=norm(q).split(" ");
     list=list.map(x=>({...x,sc:scoreName(x.f.name,qT)})).filter(x=>x.sc>0).sort((a,b)=>b.sc-a.sc);
   } else {
-    list.sort((a,b)=>((b.f.n||1)-(a.f.n||1)) || ((b.f.t||0)-(a.f.t||0)));
+    const timely=quickTimeStats();
+    list=list.map(x=>{
+      const ts=timely[quickKey(x.f.name)]||{near:0,close:0,recency:0};
+      return {...x,ts,timeScore:ts.near*100+ts.close*40+ts.recency*5};
+    }).sort((a,b)=>(b.timeScore-a.timeScore)||((b.f.n||1)-(a.f.n||1))||((b.f.t||0)-(a.f.t||0)));
   }
-  $("favList").innerHTML = list.length ? list.map(x=>`
+  $("favList").innerHTML = list.length ? list.map(x=>{
+    const selected=groupSelection.has(x.i);
+    const badge=x.ts&&x.ts.near>=2?'<span class="quick-badge">COMMON NOW</span>':"";
+    const groupMeta=Array.isArray(x.f.groupItems)?" · "+x.f.groupItems.length+" items":"";
+    return `
     <div style="display:flex;gap:6px;margin-bottom:6px">
-      <button class="fav" style="margin-bottom:0;flex:1" data-fav="${x.i}"><b>${esc(x.f.name)}</b><small>${Math.round(x.f.kcal)} kcal · ${Math.round(x.f.p)}P${(x.f.n||1)>1?" · "+x.f.n+"\u00d7":""}</small></button>
-      <button class="del" data-fscale="${x.i}" aria-label="Adjust portion of ${esc(x.f.name)}" style="border:1px solid var(--line);border-radius:10px;padding:0 10px">⚖</button>
-      <button class="del" data-fdel="${x.i}" aria-label="Remove ${esc(x.f.name)} from quick list" style="border:1px solid var(--line);border-radius:10px;padding:0 10px">✕</button>
+      ${groupMode?`<button class="select-dot ${selected?"on":""}" data-gsel="${x.i}" aria-label="Select ${esc(x.f.name)}">${selected?"✓":"+"}</button>`:""}
+      <button class="fav" style="margin-bottom:0;flex:1" ${groupMode?`data-gsel="${x.i}"`:`data-fav="${x.i}"`}><b>${esc(x.f.name)}${badge}</b><small>${Math.round(x.f.kcal)} kcal · ${Math.round(x.f.p)}P${groupMeta}${(x.f.n||1)>1?" · "+x.f.n+"×":""}</small></button>
+      ${groupMode?"":`<button class="del" data-fscale="${x.i}" aria-label="Adjust portion of ${esc(x.f.name)}" style="border:1px solid var(--line);border-radius:10px;padding:0 10px">⚖</button>
+      <button class="del" data-fdel="${x.i}" aria-label="Remove ${esc(x.f.name)} from quick list" style="border:1px solid var(--line);border-radius:10px;padding:0 10px">✕</button>`}
     </div>`
-    + (scalingIdx===x.i ? `
+    + (!groupMode&&scalingIdx===x.i ? `
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:-2px 0 10px;padding:8px;background:var(--bg);border-radius:10px">
       <span class="muted" style="font-size:11.5px;width:100%">Portion of the usual amount:</span>
       ${[0.5,0.75,1.25,1.5,2].map(v=>`<button class="mtab" data-fslog="${v}" data-fsi="${x.i}">×${v}</button>`).join("")}
       <input id="fsVal" type="number" step="0.05" min="0.05" placeholder="×?" aria-label="Custom multiplier" style="width:74px;flex:none;padding:7px 8px">
       <button class="btn" data-fslogc="${x.i}" style="padding:8px 14px">Log</button>
       <button class="btn ghost" data-fscancel="1" style="padding:8px 10px">Cancel</button>
-    </div>` : "")).join("")
+    </div>` : "");
+  }).join("")
     : '<p class="muted" style="font-size:13px;margin:0">No matches — try fewer letters.</p>';
 }
 function logScaled(f,factor){
   if(!f||!factor||factor<=0) return;
   scalingIdx=null;
-  logMeal({ name:f.name+(factor!==1?" ×"+factor:""), kcal:f.kcal*factor, p:f.p*factor, c:f.c*factor, f:f.f*factor, sf:f.sf!=null?f.sf*factor:undefined, sfSource:f.sfSource, sfConfidence:f.sfConfidence, g:f.g?f.g*factor:undefined }, false);
+  const groupItems=Array.isArray(f.groupItems)?f.groupItems.map(x=>({...x,kcal:(+x.kcal||0)*factor,p:(+x.p||0)*factor,c:(+x.c||0)*factor,f:(+x.f||0)*factor,sf:x.sf!=null?(+x.sf||0)*factor:undefined})):undefined;
+  logMeal({ name:f.name+(factor!==1?" ×"+factor:""), kcal:f.kcal*factor, p:f.p*factor, c:f.c*factor, f:f.f*factor, sf:f.sf!=null?f.sf*factor:undefined, sfSource:f.sfSource, sfConfidence:f.sfConfidence, g:f.g?f.g*factor:undefined, gluten:f.gluten, groupItems }, false);
 }
 
 // ── macro breakdown (tap PROTEIN/CARBS/FAT) ──────────────────
@@ -654,13 +732,14 @@ function logMeal(m, remember=true){
   if(m.sf!=null&&!isNaN(+m.sf)) entry.sf=Math.max(0,Math.min(entry.f,Math.round(+m.sf*10)/10));
   if(m.sfSource) entry.sfSource=String(m.sfSource).slice(0,80);
   if(m.sfConfidence) entry.sfConfidence=String(m.sfConfidence).slice(0,16);
+  if(Array.isArray(m.groupItems)) entry.groupItems=m.groupItems.slice(0,24).map(x=>({name:String(x.name||"Item").slice(0,120),kcal:+x.kcal||0,p:+x.p||0,c:+x.c||0,f:+x.f||0,sf:x.sf!=null?+x.sf:undefined}));
   meals.push(entry); save(KV(),meals); satEstCache.clear();
   // usage tracking: every log of a known meal bumps its count (scaled names match their base)
   const baseName=entry.name.replace(/\s×[\d.]+$/,"").toLowerCase();
   const ex=favs.find(f=>{const fn=f.name.toLowerCase(); return fn===baseName||fn===entry.name.toLowerCase();});
   if(ex){ ex.n=(ex.n||1)+1; ex.t=Date.now(); save("fl:favs",favs); }
   else if(remember){
-    favs.unshift({name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f,sf:entry.sf,sfSource:entry.sfSource,sfConfidence:entry.sfConfidence,g:entry.g,n:1,t:Date.now()});
+    favs.unshift({name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f,sf:entry.sf,sfSource:entry.sfSource,sfConfidence:entry.sfConfidence,g:entry.g,gluten:entry.gluten,groupItems:entry.groupItems,n:1,t:Date.now()});
     if(favs.length>200){
       let wi=0,ws=Infinity;
       favs.forEach((f,i)=>{ const s=(f.n||1)*1e13+(f.t||0); if(s<ws){ws=s;wi=i;} });
@@ -675,8 +754,23 @@ function logMeal(m, remember=true){
 const panels=["panelQuick","panelBuild","panelManual","panelAI"];
 function hidePanels(){ panels.forEach(p=>$(p).classList.add("hidden")); ["bQuick","bBuild","bManual","bAI"].forEach(b=>$(b).classList.remove("on")); }
 function togglePanel(p,b){ const el=$(p),was=!el.classList.contains("hidden"); hidePanels(); if(!was){ el.classList.remove("hidden"); $(b).classList.add("on"); } }
-$("bQuick").onclick=()=>{ togglePanel("panelQuick","bQuick"); if(!$("panelQuick").classList.contains("hidden")){ $("favQ").value=""; scalingIdx=null; renderFavs(); } };
+$("bQuick").onclick=()=>{ togglePanel("panelQuick","bQuick"); if(!$("panelQuick").classList.contains("hidden")){ $("favQ").value=""; setGroupMode(false); } };
 $("favQ").addEventListener("input",renderFavs);
+$("groupToggle").onclick=()=>setGroupMode(!groupMode);
+$("groupCancel").onclick=()=>setGroupMode(false);
+$("groupSave").onclick=()=>{
+  const chosen=[...groupSelection].map(i=>favs[i]).filter(Boolean);
+  const name=$("groupName").value.trim();
+  if(chosen.length<2){ toast("Select at least two entries"); return; }
+  if(!name){ toast("Name your group first"); return; }
+  if(favs.some(f=>quickKey(f.name)===quickKey(name))){ toast("That Quick name already exists"); return; }
+  const s=sum(chosen), groupItems=chosen.flatMap(f=>Array.isArray(f.groupItems)?f.groupItems:[{name:f.name,kcal:+f.kcal||0,p:+f.p||0,c:+f.c||0,f:+f.f||0,sf:f.sf}]).slice(0,24);
+  const sf=chosen.reduce((a,f)=>a+satInfo(f).sf,0);
+  const gluten=chosen.some(f=>f.gluten&&f.gluten!=="none")?"possible":"none";
+  favs.unshift({name,kcal:s.kcal,p:s.p,c:s.c,f:s.f,sf:Math.round(sf*10)/10,sfSource:"grouped Quick entries",sfConfidence:"stored",gluten,groupItems,n:1,t:Date.now()});
+  if(favs.length>200) favs.pop();
+  save("fl:favs",favs); setGroupMode(false); toast("Quick group saved: "+name);
+};
 $("bBuild").onclick=()=>togglePanel("panelBuild","bBuild");
 $("bManual").onclick=()=>togglePanel("panelManual","bManual");
 $("bAI").onclick=()=>{ togglePanel("panelAI","bAI"); refreshAIPanel(); };
@@ -730,6 +824,8 @@ document.addEventListener("click",e=>{
   const fslc=e.target.closest("[data-fslogc]");
   if(fslc){ logScaled(favs[+fslc.dataset.fslogc], parseFloat($("fsVal").value)); return; }
   if(e.target.closest("[data-fscancel]")){ scalingIdx=null; renderFavs(); return; }
+  const gs=e.target.closest("[data-gsel]");
+  if(gs){ const i=+gs.dataset.gsel; groupSelection.has(i)?groupSelection.delete(i):groupSelection.add(i); renderGroupSummary(); renderFavs(); return; }
   const fd=e.target.closest("[data-fdel]");
   if(fd){ favs.splice(+fd.dataset.fdel,1); save("fl:favs",favs); scalingIdx=null; renderFavs(); return; }
   const fav=e.target.closest("[data-fav]");
@@ -1119,7 +1215,7 @@ async function aiRequest(path,payload){
   throw lastError;
 }
 function setAIWorking(working,message=""){
-  ["aiTest","descGo","photoCam","photoIn"].forEach(id=>{ const el=$(id); if(el) el.disabled=working; });
+  ["aiTest","descGo","photoCam","photoIn","chatSend"].forEach(id=>{ const el=$(id); if(el) el.disabled=working; });
   $("aiStatus").textContent=message;
 }
 $("aiTest").onclick=async()=>{
@@ -1128,8 +1224,51 @@ $("aiTest").onclick=async()=>{
     const data=await aiRequest("/health");
     $("aiStatus").textContent="✓ Connected and verified · "+(data.model||"Gemini");
   }catch(err){ $("aiStatus").textContent="✗ "+friendlyAIError(err); }
-  finally{ ["aiTest","descGo","photoCam","photoIn"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; }); }
+  finally{ ["aiTest","descGo","photoCam","photoIn","chatSend"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; }); }
 };
+
+function renderChat(){
+  const list=$("chatList");
+  if(!chatHistory.length){
+    list.innerHTML='<div class="chat-msg assistant">Ask about today\'s macros, what to eat next, your recent patterns, or gluten-free choices.</div>';
+  }else{
+    list.innerHTML=chatHistory.map(item=>'<div class="chat-msg '+item.role+'">'+esc(item.content)+'</div>').join("");
+  }
+  list.scrollTop=list.scrollHeight;
+}
+function fuelChatContext(){
+  const today=load(K_TODAY(),[]).slice(0,30).map(m=>({name:m.name,time:m.time,kcal:+m.kcal||0,p:+m.p||0,c:+m.c||0,f:+m.f||0,gluten:m.gluten||"none"}));
+  const recent=[];
+  for(let i=1;i<=7;i++){
+    const day=load(K_DAY(i),[]), total=sum(day);
+    if(day.length) recent.push({date:K_DAY(i).slice(7),kcal:Math.round(total.kcal),p:Math.round(total.p),c:Math.round(total.c),f:Math.round(total.f)});
+  }
+  return {targets:{kcal:T.kcal,protein:T.protein,carbs:T.carbs,fat:T.fat},today,recent};
+}
+async function sendChat(){
+  const input=$("chatIn"), message=input.value.trim();
+  if(!message) return;
+  const prior=chatHistory.slice(-10);
+  chatHistory.push({role:"user",content:message}); chatHistory=chatHistory.slice(-20);
+  save("fl:chat",chatHistory); input.value=""; renderChat();
+  $("chatSend").disabled=true; $("chatSend").textContent="Thinking…"; input.disabled=true;
+  try{
+    const data=await aiRequest("/chat",{message,history:prior,context:fuelChatContext()});
+    chatHistory.push({role:"assistant",content:String(data.answer||"I could not produce an answer.")});
+    chatHistory=chatHistory.slice(-20); save("fl:chat",chatHistory); renderChat();
+  }catch(err){
+    $("aiStatus").textContent="✗ Chat: "+friendlyAIError(err);
+  }finally{
+    $("chatSend").disabled=false; $("chatSend").textContent="Send"; input.disabled=false; input.focus();
+  }
+}
+$("chatSend").onclick=sendChat;
+$("chatIn").addEventListener("keydown",e=>{ if(e.key==="Enter"&&!e.shiftKey){ e.preventDefault(); sendChat(); } });
+$("chatClear").onclick=()=>{
+  if(chatHistory.length&&!confirm("Clear the chat stored on this device?")) return;
+  chatHistory=[]; localStorage.removeItem("fl:chat"); renderChat();
+};
+renderChat();
 
 function blobToBase64(blob){
   return new Promise((resolve,reject)=>{
@@ -1197,7 +1336,7 @@ async function handlePhotoFile(f){
     const result=await aiRequest("/analyze",{kind:"photo",image:{mimeType:image.mimeType,data:image.data}});
     $("aiStatus").textContent=""; showPending(result.meal);
   }catch(err){ $("aiStatus").textContent="Analysis failed: "+friendlyAIError(err); }
-  finally{ ["aiTest","descGo","photoCam","photoIn"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; }); }
+  finally{ ["aiTest","descGo","photoCam","photoIn","chatSend"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; }); }
 }
 $("photoIn").addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; handlePhotoFile(f); });
 $("photoCam").addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; handlePhotoFile(f); });
@@ -1208,7 +1347,7 @@ $("descGo").onclick=async()=>{
     const result=await aiRequest("/analyze",{kind:"description",description:txt});
     $("aiStatus").textContent=""; $("descIn").value=""; showPending(result.meal);
   }catch(err){ $("aiStatus").textContent="Estimate failed: "+friendlyAIError(err); }
-  finally{ ["aiTest","descGo","photoCam","photoIn"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; }); }
+  finally{ ["aiTest","descGo","photoCam","photoIn","chatSend"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; }); }
 };
 
 // ── progress ─────────────────────────────────────────────────

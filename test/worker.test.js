@@ -91,3 +91,32 @@ test("maps Gemini quota errors and retries once", async () => {
   assert.equal(result.error.retryable, true);
   assert.equal(calls, 2);
 });
+
+test("returns a grounded chat answer", async () => {
+  let received;
+  const response = await handleRequest(request("/chat", {
+    message: "What should I eat to reach protein?",
+    history: [{ role: "user", content: "Keep it practical" }],
+    context: {
+      targets: { kcal: 2250, protein: 180, carbs: 240, fat: 70 },
+      today: [{ name: "Breakfast", kcal: 450, p: 30, c: 50, f: 12 }],
+      recent: [{ date: "2026-09-19", kcal: 2100, p: 170, c: 220, f: 65 }]
+    }
+  }), env, { chat: async body => { received = body; return "Add a gluten-free yogurt and whey bowl."; } });
+  const result = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(result.answer, "Add a gluten-free yogurt and whey bowl.");
+  assert.equal(received.message, "What should I eat to reach protein?");
+});
+
+test("rejects an empty chat question", async () => {
+  const response = await handleRequest(request("/chat", { message: "   " }), env, { chat: async () => "unused" });
+  const result = await response.json();
+  assert.equal(response.status, 400);
+  assert.equal(result.error.code, "INVALID_INPUT");
+});
+
+test("caps oversized chat requests", async () => {
+  const response = await handleRequest(request("/chat", { message: "x".repeat(81_000) }), env, { chat: async () => "unused" });
+  assert.equal(response.status, 413);
+});

@@ -7,7 +7,14 @@ FuelLog is a private-first meal, macro, and progress tracker hosted on GitHub Pa
 - The browser resizes meal photos, converts them to JPEG, and sends a maximum 4 MB payload.
 - The Worker verifies the GitHub Pages origin and a private FuelLog access code.
 - The Worker calls the pinned stable Gemini model with a strict JSON schema, validates the result, and returns actionable errors.
+- Ask FuelLog sends the current question, up to ten recent chat messages, today's meal log, targets, and seven compact daily summaries through the same protected Worker. Chat history remains on the device.
 - The editable review screen remains mandatory because a photo cannot reveal exact weights or hidden ingredients.
+
+## Smart Quick entries
+
+- Quick entries are ranked from the previous 45 days so meals frequently logged near the current time appear first.
+- **Create group** combines two or more Quick entries into a reusable meal such as a shake; grouped meals retain their component list and support portion scaling.
+- Existing logs and Quick entries remain compatible; no data migration is required.
 
 ## One-time Cloudflare setup
 
