@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleRequest, normalizeMeal } from "../worker/index.js";
+import { handleRequest, modelCandidates, normalizeMeal } from "../worker/index.js";
 
 const env = {
   APP_TOKEN: "test-access-code",
@@ -43,6 +43,12 @@ test("normalizes and caps nutrition values", () => {
   const meal = normalizeMeal({ ...validMeal, fat: 5, sat_fat: 9 });
   assert.equal(meal.sat_fat, 5);
   assert.equal(meal.items.length, 2);
+});
+
+test("uses Flash-Lite for chat and keeps meal fallbacks", () => {
+  assert.deepEqual(modelCandidates({}, "chat"), ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"]);
+  assert.deepEqual(modelCandidates({}, "meal"), ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]);
+  assert.equal(modelCandidates({ GEMINI_CHAT_MODEL: "custom-chat" }, "chat")[0], "custom-chat");
 });
 
 test("rejects missing access code", async () => {

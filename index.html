@@ -249,7 +249,7 @@
           <input id="chatIn" maxlength="1200" placeholder="Ask a nutrition question…" aria-label="Ask FuelLog">
           <button class="btn" id="chatSend">Send</button>
         </div>
-        <p class="tiny">Uses today’s log, your targets, and seven daily summaries. Chat stays on this device; questions are sent securely to Gemini. Not medical advice.</p>
+        <p class="tiny">Exact remaining calories and macros are calculated on-device. More complex questions use today’s log, your targets, seven daily summaries, and secure Gemini fallback. Not medical advice.</p>
         <button class="btn ghost full" id="aiTest" style="margin-top:8px">Test AI connection</button>
         <button class="btn ghost full" id="aiConfigClear" style="margin-top:8px">Change AI service</button>
       </div>
@@ -1245,15 +1245,44 @@ function fuelChatContext(){
   }
   return {targets:{kcal:T.kcal,protein:T.protein,carbs:T.carbs,fat:T.fat},today,recent};
 }
+function localChatAnswer(message,context){
+  const q=norm(message), total=context.today.reduce((a,m)=>({kcal:a.kcal+(+m.kcal||0),p:a.p+(+m.p||0),c:a.c+(+m.c||0),f:a.f+(+m.f||0)}),{kcal:0,p:0,c:0,f:0});
+  const exact=/\b(left|remaining|remain|available|can i eat|can eat|how much|how many)\b/.test(q);
+  const result=(label,used,target,unit)=>{
+    const left=Math.round(target-used), usedRounded=Math.round(used);
+    return left>=0
+      ? "You have "+left+unit+" "+label+" remaining today. You have logged "+usedRounded+unit+" of your "+target+unit+" target."
+      : "You are "+Math.abs(left)+unit+" over your "+label+" target today. You have logged "+usedRounded+unit+" against a "+target+unit+" target.";
+  };
+  if(exact&&/\b(calorie|calories|kcal)\b/.test(q)) return result("calories",total.kcal,context.targets.kcal," kcal");
+  if(exact&&/\b(protein)\b/.test(q)) return result("protein",total.p,context.targets.protein,"g");
+  if(exact&&/\b(carb|carbs|carbohydrate|carbohydrates)\b/.test(q)) return result("carbohydrates",total.c,context.targets.carbs,"g");
+  if(exact&&/\b(fat|fats)\b/.test(q)) return result("fat",total.f,context.targets.fat,"g");
+  if(/\b(macro|macros)\b/.test(q)&&/\b(left|remaining|remain|today|summary)\b/.test(q)){
+    return [
+      result("calories",total.kcal,context.targets.kcal," kcal"),
+      result("protein",total.p,context.targets.protein,"g"),
+      result("carbohydrates",total.c,context.targets.carbs,"g"),
+      result("fat",total.f,context.targets.fat,"g")
+    ].join("\n");
+  }
+  return "";
+}
 async function sendChat(){
   const input=$("chatIn"), message=input.value.trim();
   if(!message) return;
   const prior=chatHistory.slice(-10);
   chatHistory.push({role:"user",content:message}); chatHistory=chatHistory.slice(-20);
   save("fl:chat",chatHistory); input.value=""; renderChat();
+  const context=fuelChatContext(), localAnswer=localChatAnswer(message,context);
+  if(localAnswer){
+    chatHistory.push({role:"assistant",content:localAnswer});
+    chatHistory=chatHistory.slice(-20); save("fl:chat",chatHistory); renderChat();
+    return;
+  }
   $("chatSend").disabled=true; $("chatSend").textContent="Thinking…"; input.disabled=true;
   try{
-    const data=await aiRequest("/chat",{message,history:prior,context:fuelChatContext()});
+    const data=await aiRequest("/chat",{message,history:prior,context});
     chatHistory.push({role:"assistant",content:String(data.answer||"I could not produce an answer.")});
     chatHistory=chatHistory.slice(-20); save("fl:chat",chatHistory); renderChat();
   }catch(err){
