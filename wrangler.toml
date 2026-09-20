@@ -1,0 +1,11 @@
+name = "fuellog-ai"
+main = "worker/index.js"
+compatibility_date = "2026-09-20"
+
+[vars]
+GEMINI_MODEL = "gemini-3.8-flash"
+ALLOWED_ORIGIN = "https://sejyta-main.github.io"
+
+# Add these as encrypted secrets; never put their values in this file:
+#   npx wrangler secret put GEMINI_API_KEY
+#   npx wrangler secret put APP_TOKEN

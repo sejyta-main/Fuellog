@@ -191,19 +191,20 @@
       <button class="btn full" id="mLog" style="margin-top:10px">Log meal</button>
     </div>
 
-    <!-- AI (optional, needs key) -->
+    <!-- AI (optional, secure Worker backend) -->
     <div class="card hidden" id="panelAI">
       <div id="aiNoKey">
         <div class="h">AI PHOTO &amp; DESCRIBE</div>
         <p style="font-size:13.5px;line-height:1.5;margin:0 0 8px">
-          Optional. Works with a <b>free Google Gemini key</b> (aistudio.google.com → Get API key,
-          no card needed — new keys start with "AQ.", older ones with "AIza") or a paid Anthropic key ("sk-ant…").
+          Connect to your private FuelLog AI service. Your Gemini key stays encrypted on the server and is never stored in this page.
         </p>
-        <input id="keyInput" type="password" placeholder="AQ.… / AIza… / sk-ant-…" style="margin-bottom:8px">
-        <button class="btn full" id="keySave">Enable AI</button>
-        <p class="tiny">Key is stored only on this device. Never publish a page containing your key. Note: on Gemini's free tier, Google may use your prompts (incl. meal photos) to improve their models — use Portions/Search if you prefer full privacy.</p>
+        <input id="aiUrlInput" inputmode="url" autocomplete="url" placeholder="https://fuellog-ai.…workers.dev" style="margin-bottom:8px" aria-label="FuelLog AI service URL">
+        <input id="aiTokenInput" type="password" autocomplete="off" placeholder="Private FuelLog access code" style="margin-bottom:8px" aria-label="FuelLog AI access code">
+        <button class="btn full" id="aiConfigSave">Connect AI service</button>
+        <p class="tiny">The service URL and access code stay on this device. Meal photos are sent only when you choose Camera or Gallery. Use Portions/Search when you prefer not to upload a photo.</p>
       </div>
       <div id="aiReady" class="hidden">
+        <div class="flag green" id="aiServiceLabel" style="margin-bottom:8px">✓ Secure AI configured</div>
         <div class="row" style="margin-bottom:8px">
           <label class="btn" style="flex:1;text-align:center;display:block">
             📷 Camera
@@ -218,7 +219,7 @@
         <button class="btn full ghost" id="descGo">Estimate with AI</button>
         <div id="aiStatus" class="tiny"></div>
         <button class="btn ghost full" id="aiTest" style="margin-top:8px">Test AI connection</button>
-        <button class="btn ghost full" id="keyClear" style="margin-top:8px">Remove key</button>
+        <button class="btn ghost full" id="aiConfigClear" style="margin-top:8px">Change AI service</button>
       </div>
     </div>
 
@@ -233,6 +234,7 @@
         <div class="mcell"><input id="pdF" type="number"><div class="mlab">FAT g</div></div>
       </div>
       <div id="pdGluten"></div>
+      <div id="pdMeta"></div>
       <div class="row" style="margin-top:12px">
         <button class="btn full" id="pdLog">Log it</button>
         <button class="btn ghost" id="pdDiscard">Discard</button>
@@ -449,7 +451,10 @@ let measurements = load("fl:measurements",[]);
 let build = [];
 let pending = null;
 let editingId = null;
-let apiKey = localStorage.getItem("fl:key")||"";
+let aiConfig = load("fl:aiConfig",{url:"",token:""});
+// Remove credentials from the retired direct-browser integration.
+localStorage.removeItem("fl:key");
+localStorage.removeItem("fl:gmodel");
 
 // ── helpers ──────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -1039,103 +1044,130 @@ $("mLog").onclick=()=>{
   updateManualSFHint();
 };
 
-// ── AI (optional key) ────────────────────────────────────────
-function refreshAIPanel(){
-  $("aiNoKey").classList.toggle("hidden",!!apiKey);
-  $("aiReady").classList.toggle("hidden",!apiKey);
-}
-const isGeminiKey=k=>k.startsWith("AIza")||k.startsWith("AQ.");
-$("keySave").onclick=()=>{
-  const k=$("keyInput").value.trim();
-  if(!k.startsWith("sk-ant") && !isGeminiKey(k)){ toast("Paste a Gemini key (AQ./AIza…) or Anthropic key (sk-ant…)"); return; }
-  apiKey=k; localStorage.setItem("fl:key",k); $("keyInput").value=""; refreshAIPanel();
-  toast("AI enabled via "+(isGeminiKey(k)?"Gemini":"Claude"));
-};
-$("keyClear").onclick=()=>{ apiKey=""; localStorage.removeItem("fl:key"); localStorage.removeItem("fl:gmodel"); refreshAIPanel(); };
-$("aiTest").onclick=async()=>{
-  $("aiStatus").textContent="Testing connection…";
+// ── AI (secure Worker backend) ───────────────────────────────
+function normalizedServiceUrl(value){
+  const raw=String(value||"").trim().replace(/\/+$/,"");
   try{
-    if(isGeminiKey(apiKey)){
-      localStorage.removeItem("fl:gmodel");
-      const m=await discoverGeminiModel();
-      $("aiStatus").textContent="✓ Connected. Your key will use: "+m;
-    } else {
-      const r=await askAI([{type:"text",text:'Reply ONLY with JSON: {"name":"ok","items":[],"kcal":1,"protein":0,"carbs":0,"fat":0,"gluten_risk":"none","gluten_note":""}'}]);
-      $("aiStatus").textContent=r&&r.name?"✓ Connected (Anthropic).":"✗ Unexpected response.";
-    }
-  }catch(e){ $("aiStatus").textContent="✗ "+e.message; }
+    const u=new URL(raw);
+    const local=/^(localhost|127\.0\.0\.1)$/.test(u.hostname);
+    if(u.protocol!=="https:"&&!local) return "";
+    return u.origin+u.pathname.replace(/\/+$/,"");
+  }catch{ return ""; }
+}
+function refreshAIPanel(){
+  const ready=!!(aiConfig.url&&aiConfig.token);
+  $("aiNoKey").classList.toggle("hidden",ready);
+  $("aiReady").classList.toggle("hidden",!ready);
+  if(ready){
+    try{ $("aiServiceLabel").textContent="✓ Secure AI · "+new URL(aiConfig.url).hostname; }
+    catch{ $("aiServiceLabel").textContent="✓ Secure AI configured"; }
+  }
+}
+$("aiConfigSave").onclick=()=>{
+  const url=normalizedServiceUrl($("aiUrlInput").value);
+  const token=$("aiTokenInput").value.trim();
+  if(!url){ toast("Enter a valid HTTPS Worker URL"); return; }
+  if(token.length<12){ toast("Access code must be at least 12 characters"); return; }
+  aiConfig={url,token}; save("fl:aiConfig",aiConfig);
+  $("aiUrlInput").value=""; $("aiTokenInput").value="";
+  refreshAIPanel(); toast("Secure AI service saved");
+};
+$("aiConfigClear").onclick=()=>{
+  $("aiUrlInput").value=aiConfig.url||"";
+  aiConfig={url:"",token:""}; localStorage.removeItem("fl:aiConfig");
+  $("aiStatus").textContent=""; refreshAIPanel();
 };
 
-const SPEC=`Respond ONLY with JSON, no markdown: {"name":"short meal name","items":[{"item":"...","est":"portion"}],"kcal":0,"protein":0,"carbs":0,"fat":0,"sat_fat":0,"gluten_risk":"none|possible|likely","gluten_note":"one sentence or empty"}`;
-function extractJson(text){
-  const clean=text.replace(/```json|```/g,"").trim();
-  return JSON.parse(clean.slice(clean.indexOf("{"),clean.lastIndexOf("}")+1));
+class AIServiceError extends Error{
+  constructor(message,code,status,retryable){ super(message); this.name="AIServiceError"; this.code=code; this.status=status; this.retryable=retryable; }
 }
-// Google retires model names regularly; discover what THIS key can use.
-async function discoverGeminiModel(){
-  const res=await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=50",
-    {headers:{"x-goog-api-key":apiKey}});
-  if(!res.ok){
-    const e=await res.json().catch(()=>({}));
-    throw new Error("model list "+res.status+(e.error&&e.error.message?" — "+e.error.message.slice(0,140):""));
-  }
-  const data=await res.json();
-  const rank=n=>{
-    let s=0;
-    const v=(n.match(/gemini-(\d+(?:\.\d+)?)/)||[])[1];
-    s+=v?parseFloat(v)*10:0;                                  // newest family first
-    if(/flash/.test(n))s+=5;                                  // flash = fast + free tier
-    if(/lite/.test(n))s-=1;                                   // full flash over lite
-    if(/preview|exp/.test(n))s-=2;                            // stable over preview
-    if(/image|live|audio|tts|embed|imagen|veo|nano|banana/.test(n))s-=1000; // wrong modality
-    return s;
-  };
-  const cand=(data.models||[])
-    .filter(m=>(m.supportedGenerationMethods||[]).includes("generateContent"))
-    .map(m=>m.name.replace(/^models\//,""))
-    .sort((a,b)=>rank(b)-rank(a))[0];
-  if(!cand) throw new Error("no text model available on this key");
-  localStorage.setItem("fl:gmodel",cand);
-  return cand;
+function friendlyAIError(err){
+  if(err?.name==="AbortError") return "The AI service took too long. Try again.";
+  if(err?.code==="ACCESS_DENIED") return "Access code rejected. Open Change AI service and check it.";
+  if(err?.code==="ORIGIN_DENIED") return "The Worker does not allow this FuelLog web address.";
+  if(err?.code==="NOT_CONFIGURED") return "The Worker is missing its Gemini API key.";
+  if(err?.code==="GEMINI_ERROR"&&err.status===429) return "Gemini quota is temporarily exhausted. Try again shortly.";
+  if(err?.code==="INVALID_RESPONSE") return "Gemini returned incomplete nutrition data. Please retry.";
+  if(err?.message==="Failed to fetch") return "Could not reach the AI service. Check the Worker URL and internet connection.";
+  return err?.message||"The meal could not be analyzed.";
 }
-const geminiCall=(model,parts)=>fetch(
-  "https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",
-  { method:"POST", headers:{"Content-Type":"application/json","x-goog-api-key":apiKey},
-    body:JSON.stringify({contents:[{parts}]}) });
-async function askAI(content){
-  if(isGeminiKey(apiKey)){
-    const parts=content.map(b=> b.type==="image"
-      ? {inline_data:{mime_type:b.source.media_type,data:b.source.data}}
-      : {text:b.text});
-    let model=localStorage.getItem("fl:gmodel");
-    if(!model) model=await discoverGeminiModel();
-    let res=await geminiCall(model,parts);
-    if(res.status===404){                                     // model retired → rediscover once
-      localStorage.removeItem("fl:gmodel");
-      model=await discoverGeminiModel();
-      res=await geminiCall(model,parts);
-    }
-    if(!res.ok){
-      const e=await res.json().catch(()=>({}));
-      throw new Error("Gemini "+res.status
-        +(res.status===429?" (free-tier rate limit — wait a minute)":"")
-        +(e.error&&e.error.message?" — "+e.error.message.slice(0,140):""));
-    }
-    const data=await res.json();
-    const text=((data.candidates||[])[0]?.content?.parts||[]).map(p=>p.text||"").join("\n");
-    if(!text) throw new Error("empty Gemini response");
-    return extractJson(text);
+async function aiRequest(path,payload){
+  if(!aiConfig.url||!aiConfig.token) throw new AIServiceError("AI service is not configured.","NOT_CONFIGURED",0,false);
+  let lastError;
+  for(let attempt=0;attempt<2;attempt++){
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(),45000);
+    try{
+      const res=await fetch(aiConfig.url+path,{
+        method:"POST",signal:ctrl.signal,
+        headers:{"Content-Type":"application/json","Authorization":"Bearer "+aiConfig.token},
+        body:payload==null?undefined:JSON.stringify(payload)
+      });
+      const data=await res.json().catch(()=>({}));
+      if(!res.ok){
+        const detail=data.error||{};
+        throw new AIServiceError(detail.message||("AI service error "+res.status),detail.code||"SERVICE_ERROR",res.status,!!detail.retryable);
+      }
+      return data;
+    }catch(err){
+      lastError=err;
+      const retryable=err?.name==="AbortError"||err?.message==="Failed to fetch"||err?.retryable;
+      if(!retryable||attempt===1) throw err;
+      await new Promise(resolve=>setTimeout(resolve,600));
+    }finally{ clearTimeout(timer); }
   }
-  // Anthropic
-  const res=await fetch("https://api.anthropic.com/v1/messages",{
-    method:"POST",
-    headers:{ "Content-Type":"application/json","x-api-key":apiKey,
-      "anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true" },
-    body:JSON.stringify({ model:"claude-sonnet-4-6", max_tokens:800, messages:[{role:"user",content}] })
+  throw lastError;
+}
+function setAIWorking(working,message=""){
+  ["aiTest","descGo","photoCam","photoIn"].forEach(id=>{ const el=$(id); if(el) el.disabled=working; });
+  $("aiStatus").textContent=message;
+}
+$("aiTest").onclick=async()=>{
+  setAIWorking(true,"Testing a real Gemini estimation…");
+  try{
+    const data=await aiRequest("/health");
+    $("aiStatus").textContent="✓ Connected and verified · "+(data.model||"Gemini");
+  }catch(err){ $("aiStatus").textContent="✗ "+friendlyAIError(err); }
+  finally{ ["aiTest","descGo","photoCam","photoIn"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; }); }
+};
+
+function blobToBase64(blob){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result).split(",")[1]);
+    reader.onerror=()=>reject(new Error("Could not read the photo."));
+    reader.readAsDataURL(blob);
   });
-  if(!res.ok) throw new Error("API "+res.status);
-  const data=await res.json();
-  return extractJson(data.content.filter(b=>b.type==="text").map(b=>b.text).join("\n"));
+}
+async function decodeMealImage(file){
+  if("createImageBitmap" in window) return createImageBitmap(file,{imageOrientation:"from-image"});
+  const url=URL.createObjectURL(file);
+  try{
+    const img=new Image();
+    await new Promise((resolve,reject)=>{ img.onload=resolve; img.onerror=()=>reject(new Error("This photo format is not supported.")); img.src=url; });
+    return img;
+  }finally{ URL.revokeObjectURL(url); }
+}
+async function prepareMealImage(file){
+  if(!file) throw new Error("Choose a photo first.");
+  if(file.size>30*1024*1024) throw new Error("The original photo is larger than 30 MB.");
+  let source;
+  try{ source=await decodeMealImage(file); }
+  catch{ throw new Error("Could not open this photo. Please use JPEG, PNG, or WebP."); }
+  const sourceW=source.width||source.naturalWidth, sourceH=source.height||source.naturalHeight;
+  if(!sourceW||!sourceH) throw new Error("The photo has no readable dimensions.");
+  const maxSide=1600, scale=Math.min(1,maxSide/Math.max(sourceW,sourceH));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.max(1,Math.round(sourceW*scale)); canvas.height=Math.max(1,Math.round(sourceH*scale));
+  const ctx=canvas.getContext("2d",{alpha:false});
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(source,0,0,canvas.width,canvas.height);
+  if(source.close) source.close();
+  let blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",0.82));
+  if(!blob) throw new Error("Could not compress this photo.");
+  if(blob.size>4*1024*1024) blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",0.68));
+  if(!blob||blob.size>4*1024*1024) throw new Error("The compressed photo is still larger than 4 MB.");
+  return {mimeType:"image/jpeg",data:await blobToBase64(blob),bytes:blob.size,width:canvas.width,height:canvas.height};
 }
 function showPending(r){
   pending=r;
@@ -1145,35 +1177,38 @@ function showPending(r){
   $("pdC").value=Math.round(r.carbs||0); $("pdF").value=Math.round(r.fat||0);
   $("pdGluten").innerHTML = r.gluten_risk && r.gluten_risk!=="none"
     ? `<div class="flag red" style="margin-top:10px">⚠️ Gluten risk: ${esc(r.gluten_note||"verify ingredients before eating.")}</div>` : "";
+  const assumptions=(r.assumptions||[]).map(x=>"• "+esc(x)).join("<br>");
+  const questions=(r.questions||[]).map(x=>"• "+esc(x)).join("<br>");
+  $("pdMeta").innerHTML=`<div class="flag ${r.confidence==="low"?"amber":"blue"}" style="margin-top:10px"><b>${esc((r.confidence||"low").toUpperCase())} CONFIDENCE</b>${assumptions?"<br>Assumptions:<br>"+assumptions:""}${questions?"<br>Please check:<br>"+questions:""}</div>`;
   hidePanels(); $("panelPending").classList.remove("hidden");
 }
 $("pdLog").onclick=()=>{ if(!pending) return;
-  logMeal({ name:$("pdName").value, kcal:$("pdKcal").value, p:$("pdP").value, c:$("pdC").value, f:$("pdF").value, sf:pending.sat_fat, sfSource:"AI estimate", sfConfidence:"medium", gluten:pending.gluten_risk });
+  logMeal({ name:$("pdName").value, kcal:$("pdKcal").value, p:$("pdP").value, c:$("pdC").value, f:$("pdF").value, sf:pending.sat_fat, sfSource:"AI estimate", sfConfidence:pending.confidence||"low", gluten:pending.gluten_risk });
   pending=null; $("panelPending").classList.add("hidden");
 };
 $("pdDiscard").onclick=()=>{ pending=null; $("panelPending").classList.add("hidden"); };
 
 async function handlePhotoFile(f){
   if(!f) return;
-  $("aiStatus").textContent="Analyzing photo…";
+  setAIWorking(true,"Preparing photo…");
   try{
-    const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result.split(",")[1]); r.onerror=rej; r.readAsDataURL(f); });
-    const r=await askAI([
-      {type:"image",source:{type:"base64",media_type:f.type||"image/jpeg",data:b64}},
-      {type:"text",text:"Estimate this meal. User is STRICTLY gluten-free (bread, pasta, cereals, soy sauce, malt, breading = risk). "+SPEC}
-    ]);
-    $("aiStatus").textContent=""; showPending(r);
-  }catch(err){ $("aiStatus").textContent="Analysis failed ("+err.message+"). Check the key and connection."; }
+    const image=await prepareMealImage(f);
+    $("aiStatus").textContent=`Analyzing ${image.width}×${image.height} photo (${Math.round(image.bytes/1024)} KB)…`;
+    const result=await aiRequest("/analyze",{kind:"photo",image:{mimeType:image.mimeType,data:image.data}});
+    $("aiStatus").textContent=""; showPending(result.meal);
+  }catch(err){ $("aiStatus").textContent="Analysis failed: "+friendlyAIError(err); }
+  finally{ ["aiTest","descGo","photoCam","photoIn"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; }); }
 }
 $("photoIn").addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; handlePhotoFile(f); });
 $("photoCam").addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; handlePhotoFile(f); });
 $("descGo").onclick=async()=>{
   const txt=$("descIn").value.trim(); if(!txt) return;
-  $("aiStatus").textContent="Estimating…";
+  setAIWorking(true,"Estimating meal…");
   try{
-    const r=await askAI([{type:"text",text:`Estimate this meal: "${txt}". User is STRICTLY gluten-free; flag gluten risk. Assume typical portions for a 79kg man cutting if missing. `+SPEC}]);
-    $("aiStatus").textContent=""; $("descIn").value=""; showPending(r);
-  }catch(err){ $("aiStatus").textContent="Estimate failed ("+err.message+")."; }
+    const result=await aiRequest("/analyze",{kind:"description",description:txt});
+    $("aiStatus").textContent=""; $("descIn").value=""; showPending(result.meal);
+  }catch(err){ $("aiStatus").textContent="Estimate failed: "+friendlyAIError(err); }
+  finally{ ["aiTest","descGo","photoCam","photoIn"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; }); }
 };
 
 // ── progress ─────────────────────────────────────────────────

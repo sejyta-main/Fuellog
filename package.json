@@ -1,0 +1,16 @@
+{
+  "name": "fuellog-ai",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "deploy:worker": "wrangler deploy",
+    "dev:worker": "wrangler dev"
+  },
+  "devDependencies": {
+    "wrangler": "^4.41.0"
+  },
+  "dependencies": {
+    "@google/genai": "^2.23.0"
+  }
+}
