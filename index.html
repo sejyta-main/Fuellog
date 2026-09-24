@@ -1380,19 +1380,108 @@ $("descGo").onclick=async()=>{
 };
 
 // ── progress ─────────────────────────────────────────────────
+// Robust 21-day weight trend for ETA/rate.
+// Fits a time-aware linear trend, removes large residual outliers (e.g. travel/water spikes),
+// then refits so one unusual weigh-in does not erase or wildly swing the ETA.
+function medianNum(a){
+  if(!a.length) return null;
+  const s=[...a].sort((x,y)=>x-y), m=Math.floor(s.length/2);
+  return s.length%2?s[m]:(s[m-1]+s[m])/2;
+}
+function weightRegression(rows){
+  if(rows.length<2) return null;
+  const t0=Date.parse(rows[0].date+"T00:00:00Z");
+  const pts=rows.map(w=>({w,x:(Date.parse(w.date+"T00:00:00Z")-t0)/86400000,y:+w.kg}))
+    .filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y));
+  if(pts.length<2) return null;
+  const mx=pts.reduce((s,p)=>s+p.x,0)/pts.length;
+  const my=pts.reduce((s,p)=>s+p.y,0)/pts.length;
+  const den=pts.reduce((s,p)=>s+(p.x-mx)*(p.x-mx),0);
+  if(!den) return null;
+  const slope=pts.reduce((s,p)=>s+(p.x-mx)*(p.y-my),0)/den;
+  const intercept=my-slope*mx;
+  const residuals=pts.map(p=>p.y-(intercept+slope*p.x));
+  const ssRes=residuals.reduce((s,r)=>s+r*r,0);
+  const ssTot=pts.reduce((s,p)=>s+(p.y-my)*(p.y-my),0);
+  return {
+    slope, intercept, pts, residuals,
+    rmse:Math.sqrt(ssRes/pts.length),
+    r2:ssTot>0?Math.max(0,1-ssRes/ssTot):0,
+    lastPred:intercept+slope*pts[pts.length-1].x
+  };
+}
+function robustWeightTrend(windowDays=21){
+  const rows=[...weights]
+    .filter(w=>w&&w.date&&Number.isFinite(+w.kg))
+    .sort((a,b)=>a.date.localeCompare(b.date));
+  if(rows.length<4) return {rate:null,trendKg:null,confidence:"low",used:rows.length,outliers:0,spanDays:0};
+  const endMs=Date.parse(rows[rows.length-1].date+"T00:00:00Z");
+  const cutMs=endMs-(windowDays-1)*86400000;
+  const recent=rows.filter(w=>Date.parse(w.date+"T00:00:00Z")>=cutMs);
+  if(recent.length<4) return {rate:null,trendKg:null,confidence:"low",used:recent.length,outliers:0,spanDays:0};
+
+  let fit=weightRegression(recent);
+  if(!fit) return {rate:null,trendKg:null,confidence:"low",used:recent.length,outliers:0,spanDays:0};
+
+  const medRes=medianNum(fit.residuals)??0;
+  const mad=medianNum(fit.residuals.map(r=>Math.abs(r-medRes)))??0;
+  // 0.65 kg floor prevents ordinary day-to-day water movement from being treated as an outlier.
+  const threshold=Math.max(0.65,3*1.4826*mad);
+  let clean=recent.filter((w,i)=>Math.abs(fit.residuals[i]-medRes)<=threshold);
+  if(clean.length>=4 && clean.length<recent.length){
+    const refit=weightRegression(clean);
+    if(refit) fit=refit; else clean=recent;
+  } else clean=recent;
+
+  const firstMs=Date.parse(clean[0].date+"T00:00:00Z");
+  const lastMs=Date.parse(clean[clean.length-1].date+"T00:00:00Z");
+  const spanDays=Math.max(0,(lastMs-firstMs)/86400000);
+  const rate=fit.slope*7;
+  let confidence="low";
+  if(clean.length>=12&&spanDays>=14&&fit.rmse<=0.35) confidence="high";
+  else if(clean.length>=7&&spanDays>=9&&fit.rmse<=0.50) confidence="medium";
+
+  return {
+    rate,
+    trendKg:fit.lastPred,
+    confidence,
+    used:clean.length,
+    outliers:recent.length-clean.length,
+    spanDays,
+    rmse:fit.rmse,
+    windowDays
+  };
+}
+
 function renderProgress(){
   const avg=a=>a.length?a.reduce((x,y)=>x+y.kg,0)/a.length:null;
-  const l7=avg(weights.slice(-7)), p7=avg(weights.slice(-14,-7));
-  const rate=(l7!=null&&p7!=null)?l7-p7:null;
+  const l7=avg(weights.slice(-7));
+  const wt=robustWeightTrend(21);
+  const rate=wt.rate;
   const curW=weights.length?weights[weights.length-1].kg:START_W;
+  const trendW=wt.trendKg!=null?wt.trendKg:(l7!=null?l7:curW);
   const bf=Math.max((curW-LEAN)/curW*100,5);
-  const togo=Math.max(curW-TARGET_W,0);
+  const togo=Math.max(trendW-TARGET_W,0);
   const loggedBF=[...weights].reverse().find(w=>w.bf!=null&&w.bf!=="");
   $("subline").textContent=`${curW} KG · ${loggedBF?loggedBF.bf+"% BF":"~"+bf.toFixed(0)+"% BF (est)"} · TARGET 15–17%`;
-  $("tNow").textContent=l7?l7.toFixed(1)+" kg":"—";
+  $("tNow").textContent=trendW!=null?trendW.toFixed(1)+" kg":"—";
   $("tRate").textContent=rate!=null?(rate>0?"+":"")+rate.toFixed(2):"—";
-  $("tEta").textContent=(rate&&rate<-0.05)?Math.ceil(togo/-rate)+" wks":"—";
-  $("goalLine").innerHTML=`Goal weight ≈ <b>${TARGET_W} kg</b> (${togo.toFixed(1)} kg of fat to go, holding muscle).`;
+
+  let eta="uncertain", etaNote="";
+  if(togo<=0.1){
+    eta="reached";
+    etaNote="Goal range reached on the smoothed trend.";
+  } else if(rate!=null&&rate<-0.05&&wt.used>=6&&wt.spanDays>=7){
+    const etaWeeks=Math.ceil(togo/-rate);
+    eta=etaWeeks>52?">1 yr":"≈"+etaWeeks+" wks"+(wt.confidence==="low"?"*":"");
+    etaNote=`ETA uses a robust ${wt.windowDays}-day trend${wt.outliers?` and ignored ${wt.outliers} unusual weigh-in${wt.outliers===1?"":"s"}`:""}. ${wt.confidence==="low"?"*Low confidence for now; keep logging and it will tighten automatically.":wt.confidence==="medium"?"Medium confidence; daily water changes can still move it.":"High confidence from the current trend."}`;
+  } else if(rate!=null&&rate>=-0.05){
+    etaNote="ETA is temporarily uncertain because the robust trend is flat or rising. Keep logging; it will return automatically when a clear loss trend resumes.";
+  } else {
+    etaNote="ETA is temporarily uncertain until there are enough recent weigh-ins.";
+  }
+  $("tEta").textContent=eta;
+  $("goalLine").innerHTML=`Goal weight ≈ <b>${TARGET_W} kg</b> (${togo.toFixed(1)} kg to go from the smoothed trend).<div style="margin-top:4px">${etaNote}</div>`;
 
   renderLossLine();
   renderCharts();
@@ -1400,13 +1489,19 @@ function renderProgress(){
   renderNavel();
   renderPhotoProgress();
 
-  // adaptive
+  // adaptive — use the same robust trend as ETA so travel/water spikes do not trigger a false calorie cut
   let ad="";
-  if(weights.length>=14 && rate!=null){
-    if(rate>-0.15) ad=`<div class="flag amber">Weight trend is flat (${rate>=0?"+":""}${rate.toFixed(2)} kg/wk). Suggested: reduce daily target ~150 kcal (carbs at dinner) or add 10 min LISS per session.</div>`;
-    else if(rate<-0.7) ad=`<div class="flag amber">Losing fast (${rate.toFixed(2)} kg/wk). To protect muscle, add ~100–150 kcal/day around training.</div>`;
-    else ad=`<div class="flag green">Perfect rate: ${rate.toFixed(2)} kg/wk. Keep targets exactly as they are.</div>`;
-  } else ad=`<div class="flag blue">Log weight for 14 days and FuelLog starts adjusting your calorie target to your real metabolism.</div>`;
+  if(rate!=null&&wt.used>=7&&wt.spanDays>=9){
+    if(wt.confidence==="low"){
+      ad=`<div class="flag blue">Weight data are still noisy (${rate>=0?"+":""}${rate.toFixed(2)} kg/wk robust trend). Hold the current calorie target and keep logging; do not adjust from a few travel/water weigh-ins.</div>`;
+    } else if(rate>-0.15){
+      ad=`<div class="flag amber">Trend is near flat (${rate>=0?"+":""}${rate.toFixed(2)} kg/wk). Hold the current target for now. Only consider a ~100–150 kcal reduction if this persists for about 14 days with consistent logging.</div>`;
+    } else if(rate<-0.7){
+      ad=`<div class="flag amber">Losing fast (${rate.toFixed(2)} kg/wk). To protect muscle, consider adding ~100–150 kcal/day around training if this pace persists.</div>`;
+    } else {
+      ad=`<div class="flag green">Good rate: ${rate.toFixed(2)} kg/wk on the robust trend. Keep targets as they are.</div>`;
+    }
+  } else ad=`<div class="flag blue">Keep logging morning weight. FuelLog needs about 7–10 days of recent data before its robust rate and ETA become useful.</div>`;
   $("adaptive").innerHTML=ad;
 
   // week + streak (rows tappable → open that day's log for editing)
