@@ -80,6 +80,29 @@ test("returns a validated description estimate", async () => {
   assert.equal(result.meal.kcal, 560);
 });
 
+test("accepts optional user context with a photo estimate", async () => {
+  let received;
+  const response = await handleRequest(request("/analyze", {
+    kind: "photo",
+    context: "150 g salmon, sauce on the side, I ate only half the pasta",
+    image: { mimeType: "image/jpeg", data: "YWJj" }
+  }), env, { generate: async body => { received = body; return JSON.stringify(validMeal); } });
+  const result = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(result.meal.kcal, 560);
+  assert.equal(received.context, "150 g salmon, sauce on the side, I ate only half the pasta");
+});
+
+test("rejects non-text photo context", async () => {
+  const response = await handleRequest(request("/analyze", {
+    kind: "photo",
+    context: { amount: 150 },
+    image: { mimeType: "image/jpeg", data: "YWJj" }
+  }), env, { generate: generateMeal });
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error.code, "INVALID_INPUT");
+});
+
 test("rejects unsupported photo data", async () => {
   const response = await handleRequest(request("/analyze", { kind: "photo", image: { mimeType: "image/heic", data: "abc" } }), env, { generate: generateMeal });
   assert.equal(response.status, 400);

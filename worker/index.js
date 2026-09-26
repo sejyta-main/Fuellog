@@ -5,6 +5,7 @@ const DEFAULT_CHAT_MODEL = "gemini-3.5-flash-lite";
 const LITE_FALLBACK_MODEL = "gemini-3.1-flash-lite";
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_DESCRIPTION_LENGTH = 2_000;
+const MAX_PHOTO_CONTEXT_LENGTH = 1_200;
 const MAX_CHAT_MESSAGE_LENGTH = 1_200;
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -219,6 +220,9 @@ function validateInput(body) {
     if (!image || !ALLOWED_IMAGE_TYPES.has(image.mimeType) || typeof image.data !== "string") {
       return "Photo must be JPEG, PNG, or WebP";
     }
+    if (body.context != null && typeof body.context !== "string") {
+      return "Photo context must be text";
+    }
     const bytes = Math.ceil(image.data.length * 3 / 4);
     if (bytes > MAX_IMAGE_BYTES) return "Compressed photo exceeds 4 MB";
   }
@@ -229,7 +233,10 @@ function promptFor(body) {
   if (body.kind === "description") {
     return `Estimate this meal from the user's description: "${cleanText(body.description, MAX_DESCRIPTION_LENGTH)}". Use typical portions only when quantities are omitted and clearly list those assumptions.`;
   }
-  return "Analyze this meal photo. Estimate each visible food and its edible portion. Include likely cooking oil or sauce only when visually or contextually justified, and ask about it when uncertainty could materially change calories.";
+  const context = cleanText(body.context, MAX_PHOTO_CONTEXT_LENGTH);
+  const base = "Analyze this meal photo. Estimate each visible food and its edible portion. Include likely cooking oil or sauce only when visually or contextually justified, and ask about it when uncertainty could materially change calories.";
+  if (!context) return base;
+  return base + ` The user also supplied meal context: "${context}". Treat those details as high-priority evidence about ingredients, quantities, preparation, and how much was actually eaten. Reconcile them with the image, and mention any important conflict as an assumption rather than silently ignoring the user's details.`;
 }
 
 async function callGemini(body, env) {

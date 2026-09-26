@@ -224,6 +224,7 @@
       </div>
       <div id="aiReady" class="hidden">
         <div class="flag green" id="aiServiceLabel" style="margin-bottom:8px">✓ Secure AI configured</div>
+        <div class="muted" style="font-weight:700;letter-spacing:1px;font-size:11px;margin-bottom:6px">PHOTO ESTIMATE</div>
         <div class="row" style="margin-bottom:8px">
           <label class="btn" style="flex:1;text-align:center;display:block">
             📷 Camera
@@ -234,6 +235,11 @@
             <input id="photoIn" type="file" accept="image/*" class="hidden">
           </label>
         </div>
+        <textarea id="photoNote" rows="3" maxlength="1200" placeholder="Optional details to improve the photo estimate — e.g. 150g salmon, 2 tbsp sauce, ate only half, no butter…" aria-label="Optional meal details for photo analysis" style="width:100%;resize:vertical;margin-bottom:8px"></textarea>
+        <button class="btn full" id="photoAnalyze" disabled>Analyze selected photo</button>
+        <div id="photoReady" class="tiny" style="margin-top:6px">Choose Camera or Gallery, then add any useful details before analyzing.</div>
+        <div style="border-top:1px solid var(--line);margin:12px 0 10px"></div>
+        <div class="muted" style="font-weight:700;letter-spacing:1px;font-size:11px;margin-bottom:6px">TEXT-ONLY ESTIMATE</div>
         <input id="descIn" placeholder='Describe: "150g chicken, 200g sweet potato"' style="margin-bottom:8px">
         <button class="btn full ghost" id="descGo">Estimate with AI</button>
         <div id="aiStatus" class="tiny"></div>
@@ -1261,7 +1267,7 @@ async function aiRequest(path,payload){
   throw lastError;
 }
 function setAIWorking(working,message=""){
-  ["aiTest","descGo","photoCam","photoIn","chatSend"].forEach(id=>{ const el=$(id); if(el) el.disabled=working; });
+  ["aiTest","descGo","photoAnalyze","photoCam","photoIn","chatSend"].forEach(id=>{ const el=$(id); if(el) el.disabled=working; });
   $("aiStatus").textContent=message;
 }
 $("aiTest").onclick=async()=>{
@@ -1270,7 +1276,7 @@ $("aiTest").onclick=async()=>{
     const data=await aiRequest("/health");
     $("aiStatus").textContent="✓ Connected and verified · "+(data.model||"Gemini");
   }catch(err){ $("aiStatus").textContent="✗ "+friendlyAIError(err); }
-  finally{ ["aiTest","descGo","photoCam","photoIn","chatSend"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; }); }
+  finally{ ["aiTest","descGo","photoAnalyze","photoCam","photoIn","chatSend"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; }); }
 };
 
 function renderChat(){
@@ -1402,19 +1408,39 @@ $("pdLog").onclick=()=>{ if(!pending) return;
 };
 $("pdDiscard").onclick=()=>{ pending=null; $("panelPending").classList.add("hidden"); };
 
+let pendingPhotoFile=null;
+function stagePhotoFile(f){
+  if(!f) return;
+  pendingPhotoFile=f;
+  $("photoReady").textContent="✓ Photo ready: "+(f.name||"camera photo")+". Add optional details, then tap Analyze selected photo.";
+  $("photoAnalyze").disabled=false;
+  $("aiStatus").textContent="";
+}
 async function handlePhotoFile(f){
   if(!f) return;
+  const context=$("photoNote").value.trim();
   setAIWorking(true,"Preparing photo…");
   try{
     const image=await prepareMealImage(f);
-    $("aiStatus").textContent=`Analyzing ${image.width}×${image.height} photo (${Math.round(image.bytes/1024)} KB)…`;
-    const result=await aiRequest("/analyze",{kind:"photo",image:{mimeType:image.mimeType,data:image.data}});
-    $("aiStatus").textContent=""; showPending(result.meal);
-  }catch(err){ $("aiStatus").textContent="Analysis failed: "+friendlyAIError(err); }
-  finally{ ["aiTest","descGo","photoCam","photoIn","chatSend"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; }); }
+    $("aiStatus").textContent=`Analyzing ${image.width}×${image.height} photo${context?" + your details":""} (${Math.round(image.bytes/1024)} KB)…`;
+    const payload={kind:"photo",image:{mimeType:image.mimeType,data:image.data}};
+    if(context) payload.context=context;
+    const result=await aiRequest("/analyze",payload);
+    pendingPhotoFile=null;
+    $("photoNote").value="";
+    $("photoReady").textContent="Choose Camera or Gallery, then add any useful details before analyzing.";
+    $("aiStatus").textContent="";
+    showPending(result.meal);
+  }catch(err){
+    $("aiStatus").textContent="Analysis failed: "+friendlyAIError(err);
+  }finally{
+    ["aiTest","descGo","photoCam","photoIn","chatSend"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; });
+    $("photoAnalyze").disabled=!pendingPhotoFile;
+  }
 }
-$("photoIn").addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; handlePhotoFile(f); });
-$("photoCam").addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; handlePhotoFile(f); });
+$("photoIn").addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; stagePhotoFile(f); });
+$("photoCam").addEventListener("change",e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=""; stagePhotoFile(f); });
+$("photoAnalyze").onclick=()=>{ if(pendingPhotoFile) handlePhotoFile(pendingPhotoFile); };
 $("descGo").onclick=async()=>{
   const txt=$("descIn").value.trim(); if(!txt) return;
   setAIWorking(true,"Estimating meal…");
@@ -1422,7 +1448,7 @@ $("descGo").onclick=async()=>{
     const result=await aiRequest("/analyze",{kind:"description",description:txt});
     $("aiStatus").textContent=""; $("descIn").value=""; showPending(result.meal);
   }catch(err){ $("aiStatus").textContent="Estimate failed: "+friendlyAIError(err); }
-  finally{ ["aiTest","descGo","photoCam","photoIn","chatSend"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; }); }
+  finally{ ["aiTest","descGo","photoAnalyze","photoCam","photoIn","chatSend"].forEach(id=>{ const el=$(id); if(el) el.disabled=false; }); }
 };
 
 // ── progress ─────────────────────────────────────────────────
