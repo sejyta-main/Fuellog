@@ -155,7 +155,7 @@
       </div>
       <input id="favQ" placeholder="Search your meals…" aria-label="Search repeat meals" style="margin-bottom:8px">
       <div id="favList"></div>
-      <p class="tiny">Entries common around this time rise to the top automatically. Search by any word — typos OK. ✕ removes a meal from this list only, never from your logs.</p>
+      <p class="tiny">Entries common around this time rise to the top automatically using up to 120 logged days of history. Search by any word — typos OK. ⚖ lets you change the amount and optionally save that modified amount as its own Quick. ✕ removes a meal from this list only, never from your logs.</p>
     </div>
 
     <!-- PORTION BUILDER -->
@@ -369,7 +369,7 @@
     <div class="card">
       <div class="h">EXPORT</div>
       <button class="btn full" id="expBtn">⬇ Download full report (CSV)</button>
-      <p class="tiny">Every meal with date, time, macros, saturated + derived unsaturated fat, the split basis, and gluten flag — plus daily totals, weigh-ins and navel measurements. Progress photos stay on-device and are never included. Opens in Excel or Google Sheets.</p>
+      <p class="tiny">Exports meals, daily totals, dedicated weight + body-fat fields, navel measurements, targets, Quick entries with usage history, grouped-Quick composition, trend summary, and progress-photo metadata. Photo images and AI credentials stay on-device and are never exported. Opens in Excel or Google Sheets.</p>
     </div>
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:8px">
@@ -388,6 +388,7 @@
 const T = { kcal:2250, protein:180, carbs:240, fat:70 };
 const START_W=79, LEAN=START_W*0.8, TARGET_BF=0.16;
 const TARGET_W=+(LEAN/(1-TARGET_BF)).toFixed(1);
+const QUICK_HISTORY_DAYS=120, MAX_QUICKS=500, PORTION_QUICK_LIMIT=20;
 
 // Per-100g unless unit noted. USDA-based.
 const FOODS = [
@@ -510,7 +511,7 @@ function parseHour(t){
 }
 function nextMealSuggestions(rem, nowH){
   const seen={}, cands=[];
-  Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).sort().reverse().slice(0,45).forEach(k=>{
+  Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).sort().reverse().slice(0,QUICK_HISTORY_DAYS).forEach(k=>{
     load(k,[]).forEach(m=>{
       if(m.gluten && m.gluten!=="none") return;               // never suggest gluten-flagged
       const h=parseHour(m.time); if(h==null||!(+m.p>0)) return;
@@ -623,7 +624,7 @@ const groupSelection=new Set();
 const quickKey=name=>String(name||"").replace(/\s×[\d.]+$/," ").replace(/\s+/g," ").trim().toLowerCase();
 function quickTimeStats(now=new Date()){
   const stats={}, nowH=now.getHours()+now.getMinutes()/60;
-  Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).sort().reverse().slice(0,45).forEach((key,dayIndex)=>{
+  Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).sort().reverse().slice(0,QUICK_HISTORY_DAYS).forEach((key,dayIndex)=>{
     load(key,[]).forEach(m=>{
       const h=parseHour(m.time); if(h==null) return;
       const distance=Math.min(Math.abs(h-nowH),24-Math.abs(h-nowH));
@@ -632,7 +633,7 @@ function quickTimeStats(now=new Date()){
       const stat=stats[k]||(stats[k]={near:0,close:0,recency:0});
       stat.near+=1;
       if(distance<=1.1) stat.close+=1;
-      stat.recency+=Math.max(0,45-dayIndex)/45;
+      stat.recency+=Math.max(0,QUICK_HISTORY_DAYS-dayIndex)/QUICK_HISTORY_DAYS;
     });
   });
   return stats;
@@ -680,6 +681,7 @@ function renderFavs(){
     + (!groupMode&&scalingIdx===x.i ? `
     <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:-2px 0 10px;padding:8px;background:var(--bg);border-radius:10px">
       <span class="muted" style="font-size:11.5px;width:100%">Portion of the usual amount:</span>
+      <label style="display:flex;align-items:center;gap:6px;width:100%;font-size:11.5px;color:var(--ink-soft)"><input id="fsSave" type="checkbox" style="width:auto"> Save modified amount as a new Quick</label>
       ${[0.5,0.75,1.25,1.5,2].map(v=>`<button class="mtab" data-fslog="${v}" data-fsi="${x.i}">×${v}</button>`).join("")}
       <input id="fsVal" type="number" step="0.05" min="0.05" placeholder="×?" aria-label="Custom multiplier" style="width:74px;flex:none;padding:7px 8px">
       <button class="btn" data-fslogc="${x.i}" style="padding:8px 14px">Log</button>
@@ -688,11 +690,33 @@ function renderFavs(){
   }).join("")
     : '<p class="muted" style="font-size:13px;margin:0">No matches — try fewer letters.</p>';
 }
-function logScaled(f,factor){
+function trimQuickHistory(){
+  while(favs.length>MAX_QUICKS){
+    let wi=0,ws=Infinity;
+    favs.forEach((f,i)=>{ const s=(f.n||0)*1e13+(f.t||0); if(s<ws){ws=s;wi=i;} });
+    favs.splice(wi,1);
+  }
+}
+function cleanFactor(v){ return String(Math.round(v*100)/100); }
+function saveScaledQuickVariant(f,factor){
+  const base=String(f.name||"Quick").split(" ×")[0].trim();
+  const name=base+" ×"+cleanFactor(factor);
+  const groupItems=Array.isArray(f.groupItems)?f.groupItems.map(x=>({...x,kcal:(+x.kcal||0)*factor,p:(+x.p||0)*factor,c:(+x.c||0)*factor,f:(+x.f||0)*factor,sf:x.sf!=null?(+x.sf||0)*factor:undefined})):undefined;
+  const variant={name,kcal:(+f.kcal||0)*factor,p:(+f.p||0)*factor,c:(+f.c||0)*factor,f:(+f.f||0)*factor,
+    sf:f.sf!=null?(+f.sf||0)*factor:undefined,sfSource:f.sfSource,sfConfidence:f.sfConfidence,g:f.g?(+f.g||0)*factor:undefined,
+    gluten:f.gluten,groupItems,n:0,t:Date.now()};
+  const ix=favs.findIndex(x=>String(x.name).toLowerCase()===name.toLowerCase());
+  if(ix>=0){ variant.n=favs[ix].n||0; favs[ix]=variant; }
+  else favs.unshift(variant);
+  trimQuickHistory(); save("fl:favs",favs);
+  return variant;
+}
+function logScaled(f,factor,saveVariant=false){
   if(!f||!factor||factor<=0) return;
   scalingIdx=null;
+  const variant=saveVariant?saveScaledQuickVariant(f,factor):null;
   const groupItems=Array.isArray(f.groupItems)?f.groupItems.map(x=>({...x,kcal:(+x.kcal||0)*factor,p:(+x.p||0)*factor,c:(+x.c||0)*factor,f:(+x.f||0)*factor,sf:x.sf!=null?(+x.sf||0)*factor:undefined})):undefined;
-  logMeal({ name:f.name+(factor!==1?" ×"+factor:""), kcal:f.kcal*factor, p:f.p*factor, c:f.c*factor, f:f.f*factor, sf:f.sf!=null?f.sf*factor:undefined, sfSource:f.sfSource, sfConfidence:f.sfConfidence, g:f.g?f.g*factor:undefined, gluten:f.gluten, groupItems }, false);
+  logMeal({ name:variant?variant.name:f.name+(factor!==1?" ×"+cleanFactor(factor):""), kcal:(+f.kcal||0)*factor, p:(+f.p||0)*factor, c:(+f.c||0)*factor, f:(+f.f||0)*factor, sf:f.sf!=null?(+f.sf||0)*factor:undefined, sfSource:f.sfSource, sfConfidence:f.sfConfidence, g:f.g?(+f.g||0)*factor:undefined, gluten:f.gluten, groupItems }, false);
 }
 
 // ── macro breakdown (tap PROTEIN/CARBS/FAT) ──────────────────
@@ -736,15 +760,12 @@ function logMeal(m, remember=true){
   meals.push(entry); save(KV(),meals); satEstCache.clear();
   // usage tracking: every log of a known meal bumps its count (scaled names match their base)
   const baseName=entry.name.replace(/\s×[\d.]+$/,"").toLowerCase();
-  const ex=favs.find(f=>{const fn=f.name.toLowerCase(); return fn===baseName||fn===entry.name.toLowerCase();});
-  if(ex){ ex.n=(ex.n||1)+1; ex.t=Date.now(); save("fl:favs",favs); }
+  const exact=favs.find(f=>String(f.name).toLowerCase()===entry.name.toLowerCase());
+  const ex=exact||favs.find(f=>String(f.name).toLowerCase()===baseName);
+  if(ex){ ex.n=(ex.n||0)+1; ex.t=Date.now(); save("fl:favs",favs); }
   else if(remember){
     favs.unshift({name:entry.name,kcal:entry.kcal,p:entry.p,c:entry.c,f:entry.f,sf:entry.sf,sfSource:entry.sfSource,sfConfidence:entry.sfConfidence,g:entry.g,gluten:entry.gluten,groupItems:entry.groupItems,n:1,t:Date.now()});
-    if(favs.length>200){
-      let wi=0,ws=Infinity;
-      favs.forEach((f,i)=>{ const s=(f.n||1)*1e13+(f.t||0); if(s<ws){ws=s;wi=i;} });
-      favs.splice(wi,1);
-    }
+    trimQuickHistory();
     save("fl:favs",favs);
   }
   hidePanels(); renderToday(); toast("Logged: "+entry.name);
@@ -768,10 +789,10 @@ $("groupSave").onclick=()=>{
   const sf=chosen.reduce((a,f)=>a+satInfo(f).sf,0);
   const gluten=chosen.some(f=>f.gluten&&f.gluten!=="none")?"possible":"none";
   favs.unshift({name,kcal:s.kcal,p:s.p,c:s.c,f:s.f,sf:Math.round(sf*10)/10,sfSource:"grouped Quick entries",sfConfidence:"stored",gluten,groupItems,n:1,t:Date.now()});
-  if(favs.length>200) favs.pop();
+  trimQuickHistory();
   save("fl:favs",favs); setGroupMode(false); toast("Quick group saved: "+name);
 };
-$("bBuild").onclick=()=>togglePanel("panelBuild","bBuild");
+$("bBuild").onclick=()=>{ togglePanel("panelBuild","bBuild"); if(!$("panelBuild").classList.contains("hidden")) renderPortionSelect(); };
 $("bManual").onclick=()=>togglePanel("panelManual","bManual");
 $("bAI").onclick=()=>{ togglePanel("panelAI","bAI"); refreshAIPanel(); };
 
@@ -820,9 +841,9 @@ document.addEventListener("click",e=>{
   const fsc=e.target.closest("[data-fscale]");
   if(fsc){ scalingIdx = scalingIdx===+fsc.dataset.fscale ? null : +fsc.dataset.fscale; renderFavs(); return; }
   const fsl=e.target.closest("[data-fslog]");
-  if(fsl){ logScaled(favs[+fsl.dataset.fsi], parseFloat(fsl.dataset.fslog)); return; }
+  if(fsl){ logScaled(favs[+fsl.dataset.fsi], parseFloat(fsl.dataset.fslog), !!document.getElementById("fsSave")?.checked); return; }
   const fslc=e.target.closest("[data-fslogc]");
-  if(fslc){ logScaled(favs[+fslc.dataset.fslogc], parseFloat($("fsVal").value)); return; }
+  if(fslc){ logScaled(favs[+fslc.dataset.fslogc], parseFloat($("fsVal").value), !!document.getElementById("fsSave")?.checked); return; }
   if(e.target.closest("[data-fscancel]")){ scalingIdx=null; renderFavs(); return; }
   const gs=e.target.closest("[data-gsel]");
   if(gs){ const i=+gs.dataset.gsel; groupSelection.has(i)?groupSelection.delete(i):groupSelection.add(i); renderGroupSummary(); renderFavs(); return; }
@@ -841,7 +862,7 @@ document.addEventListener("click",e=>{
       m.c=+$("eC").value||0; m.f=+$("eF").value||0;
       const sfRaw=$("eSF").value.trim();
       const si=sfRaw!=="" ? {sf:Math.max(0,Math.min(m.f,+sfRaw||0)),source:"manual value",confidence:"user"} : estimateSatFat(m.name,m.f);
-      m.sf=Math.round(si.sf*10)/10; m.sfSource=si.source; m.sfConfidence=si.confidence;
+      m.sf=Math.round(si.sf*10)/10; m.sfSource=si.source; m.sfConfidence=si.confidence; m.sfEstimated=sfRaw==="";
       const gEl=document.getElementById("eG");
       if(gEl){ const gv=parseFloat(gEl.value); if(gv>0) m.g=Math.round(gv); }
       save(KV(),meals); satEstCache.clear();
@@ -940,7 +961,7 @@ function satInfo(m){
   const fat=Math.max(0,+m.f||0);
   if(m.sf!=null&&!isNaN(+m.sf)){
     const sf=Math.round(Math.max(0,Math.min(fat,+m.sf))*10)/10;
-    return {sf,unsat:Math.round(Math.max(0,fat-sf)*10)/10,source:m.sfSource||"stored value",confidence:m.sfConfidence||"recorded",estimated:false};
+    return {sf,unsat:Math.round(Math.max(0,fat-sf)*10)/10,source:m.sfSource||"stored value",confidence:m.sfConfidence||"recorded",estimated:!!m.sfEstimated};
   }
   return estimateSatFat(m.name,fat);
 }
@@ -1101,7 +1122,24 @@ $("offAdd").onclick=()=>{
 };
 
 // ── portion builder ──────────────────────────────────────────
-$("foodSel").innerHTML = FOODS.map((f,i)=>`<option value="${i}">${esc(f.n)} (per ${f.per>1?f.per:""}${f.u})</option>`).join("");
+function recurrentQuickRefs(limit=PORTION_QUICK_LIMIT){
+  return favs.map((f,i)=>({f,i}))
+    .sort((a,b)=>((b.f.n||0)-(a.f.n||0))||((b.f.t||0)-(a.f.t||0)))
+    .slice(0,limit);
+}
+function updatePortionQtyHint(){
+  const v=$("foodSel").value||"";
+  $("foodQty").placeholder=v.startsWith("q:")?"portions":"qty";
+}
+function renderPortionSelect(){
+  const quick=recurrentQuickRefs();
+  const qOpts=quick.map(x=>`<option value="q:${x.i}">⚡ ${esc(x.f.name)} (saved portion · ${x.f.n||0}× used)</option>`).join("");
+  const staples=FOODS.map((f,i)=>`<option value="f:${i}">${esc(f.n)} (per ${f.per>1?f.per:""}${f.u})</option>`).join("");
+  $("foodSel").innerHTML=(qOpts?`<optgroup label="⚡ 20 most-used Quick">${qOpts}</optgroup>`:"")+`<optgroup label="🏠 USDA staples">${staples}</optgroup>`;
+  updatePortionQtyHint();
+}
+renderPortionSelect();
+$("foodSel").addEventListener("change",updatePortionQtyHint);
 function renderBuild(){
   const s=sum(build.map(b=>b.m));
   $("bKcal").textContent=Math.round(s.kcal); $("bP").textContent=Math.round(s.p);
@@ -1113,10 +1151,18 @@ document.addEventListener("click",e=>{
   if(bd){ build.splice(+bd.dataset.bdel,1); renderBuild(); }
 });
 $("foodAdd").onclick=()=>{
-  const f=FOODS[+$("foodSel").value]; const q=parseFloat($("foodQty").value);
+  const value=$("foodSel").value||"", q=parseFloat($("foodQty").value);
   if(!q||q<=0) return;
-  const mult=q/f.per;
-  build.push({ label:q+f.u+" "+f.n, g:(f.u==="g"||f.u==="ml")?q:null, m:{kcal:f.kcal*mult,p:f.p*mult,c:f.c*mult,f:f.f*mult,sf:(f.sf||0)*mult} });
+  if(value.startsWith("q:")){
+    const f=favs[+value.slice(2)]; if(!f) return;
+    build.push({ label:q+" × saved portion "+f.name, g:null,
+      m:{kcal:(+f.kcal||0)*q,p:(+f.p||0)*q,c:(+f.c||0)*q,f:(+f.f||0)*q,sf:f.sf!=null?(+f.sf||0)*q:0},
+      gluten:f.gluten&&f.gluten!=="none" });
+  } else {
+    const f=FOODS[+value.replace(/^f:/,"")]; if(!f) return;
+    const mult=q/f.per;
+    build.push({ label:q+f.u+" "+f.n, g:(f.u==="g"||f.u==="ml")?q:null, m:{kcal:f.kcal*mult,p:f.p*mult,c:f.c*mult,f:f.f*mult,sf:(f.sf||0)*mult} });
+  }
   $("foodQty").value=""; renderBuild();
 };
 $("buildClear").onclick=()=>{ build=[]; renderBuild(); };
@@ -1797,34 +1843,68 @@ function renderCharts(){
   barsChart("chC", days.map(d=>({v:d.s.c,logged:d.logged})), T.carbs, v=>v<=T.carbs*1.05);
 }
 
-// ── export: full CSV report ──────────────────────────────────
-function exportCSV(){
-  const rows=[["type","date","time","name","kcal","protein_g","carbs_g","fat_g","saturated_fat_g","unsaturated_fat_g","fat_split_basis","fat_split_confidence","gluten_flag","navel_cm"]];
+// ── export: comprehensive CSV report ──────────────────────────
+async function exportCSV(){
+  const H=["type","date","time","name","entry_id","kcal","protein_g","carbs_g","fat_g","saturated_fat_g","unsaturated_fat_g","fat_split_basis","fat_split_confidence","gluten_flag","status","quantity_g","weight_kg","body_fat_pct","navel_cm","target_name","target_value","target_unit","usage_count","last_used","details"];
+  const rows=[H];
+  const add=o=>rows.push(H.map(k=>o[k]??""));
   const keys=Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).sort();
+
   keys.forEach(k=>{
-    const date=k.slice(7);
-    const dm=load(k,[]);
+    const date=k.slice(7), dm=load(k,[]);
     if(!dm.length) return;
     dm.forEach(m=>{
       const si=satInfo(m);
-      rows.push(["MEAL",date,m.time||"",m.name,Math.round(m.kcal),Math.round(m.p),Math.round(m.c),Math.round(m.f),si.sf.toFixed(1),si.unsat.toFixed(1),si.source,si.confidence,m.gluten||"none",""]);
+      add({type:"MEAL",date,time:m.time||"",name:m.name,entry_id:m.id||"",kcal:Math.round(m.kcal),protein_g:Math.round(m.p),carbs_g:Math.round(m.c),fat_g:Math.round(m.f),
+        saturated_fat_g:si.sf.toFixed(1),unsaturated_fat_g:si.unsat.toFixed(1),fat_split_basis:si.source,fat_split_confidence:si.confidence,
+        gluten_flag:m.gluten||"none",quantity_g:m.g||"",details:m.sfEstimated?"saturated fat is estimated":""});
     });
     const s=sum(dm), unsat=Math.round(Math.max(0,s.f-s.sf)*10)/10;
-    const usedEstimate=dm.some(m=>m.sf==null);
-    rows.push(["DAY_TOTAL",date,"","Daily total ("+dm.length+" meals)",Math.round(s.kcal),Math.round(s.p),Math.round(s.c),Math.round(s.f),s.sf.toFixed(1),unsat.toFixed(1),usedEstimate?"daily total; includes auto-estimates":"daily total from stored values",usedEstimate?"mixed":"recorded",
-      s.kcal<=T.kcal*1.05?"on target":"over by "+Math.round(s.kcal-T.kcal),""]);
+    const usedEstimate=dm.some(m=>m.sf==null||m.sfEstimated);
+    add({type:"DAY_TOTAL",date,name:"Daily total ("+dm.length+" meals)",kcal:Math.round(s.kcal),protein_g:Math.round(s.p),carbs_g:Math.round(s.c),fat_g:Math.round(s.f),
+      saturated_fat_g:s.sf.toFixed(1),unsaturated_fat_g:unsat.toFixed(1),fat_split_basis:usedEstimate?"daily total; includes auto-estimates":"daily total from stored values",
+      fat_split_confidence:usedEstimate?"mixed":"recorded",status:s.kcal<=T.kcal*1.05?"on target":"over by "+Math.round(s.kcal-T.kcal),details:"meal_count="+dm.length});
   });
-  weights.forEach(w=>rows.push(["WEIGHT",w.date,"","Morning weigh-in"+(w.bf!=null&&w.bf!==""?" ("+w.bf+"% BF)":""),w.kg,"","","","","","","","",""]));
-  measurements.forEach(m=>rows.push(["MEASUREMENT",m.date,"","Navel circumference","","","","","","","","","",(+m.navel).toFixed(1)]));
-  if(rows.length===1){ toast("Nothing to export yet"); return; }
-  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\r\n");
+
+  weights.forEach(w=>add({type:"WEIGHT",date:w.date,name:"Morning weigh-in",weight_kg:w.kg,body_fat_pct:w.bf!=null&&w.bf!==""?w.bf:""}));
+  measurements.forEach(m=>add({type:"MEASUREMENT",date:m.date,name:"Navel circumference",navel_cm:(+m.navel).toFixed(1)}));
+
+  [
+    ["Daily calories",T.kcal,"kcal"],
+    ["Daily protein",T.protein,"g"],
+    ["Daily carbs",T.carbs,"g"],
+    ["Daily fat",T.fat,"g"],
+    ["Goal weight",TARGET_W,"kg"],
+    ["Body-fat target","15–17","%"],
+    ["Starting reference weight",START_W,"kg"]
+  ].forEach(x=>add({type:"TARGET",name:x[0],target_name:x[0],target_value:x[1],target_unit:x[2]}));
+
+  favs.forEach(f=>{
+    const si=satInfo(f), last=f.t?new Date(f.t).toISOString():"";
+    add({type:"QUICK",name:f.name,kcal:Math.round(+f.kcal||0),protein_g:Math.round(+f.p||0),carbs_g:Math.round(+f.c||0),fat_g:Math.round(+f.f||0),
+      saturated_fat_g:si.sf.toFixed(1),unsaturated_fat_g:si.unsat.toFixed(1),fat_split_basis:si.source,fat_split_confidence:si.confidence,
+      gluten_flag:f.gluten||"none",quantity_g:f.g||"",usage_count:f.n||0,last_used:last,details:Array.isArray(f.groupItems)?"group_items="+f.groupItems.length:""});
+    if(Array.isArray(f.groupItems)) f.groupItems.forEach((x,i)=>add({type:"QUICK_GROUP_ITEM",name:x.name||("Item "+(i+1)),kcal:+x.kcal||0,protein_g:+x.p||0,carbs_g:+x.c||0,fat_g:+x.f||0,
+      saturated_fat_g:x.sf!=null?+x.sf:"",unsaturated_fat_g:x.sf!=null?Math.max(0,(+x.f||0)-(+x.sf||0)):"",details:"parent_quick="+f.name+"; item_index="+(i+1)}));
+  });
+
+  const wt=robustWeightTrend(21);
+  add({type:"TREND_SUMMARY",date:weights.length?weights[weights.length-1].date:"",name:"Robust 21-day weight trend",weight_kg:wt.trendKg!=null?wt.trendKg.toFixed(2):"",
+    details:"rate_kg_per_week="+(wt.rate!=null?wt.rate.toFixed(3):"")+"; confidence="+wt.confidence+"; weigh_ins_used="+wt.used+"; outliers_ignored="+wt.outliers});
+
+  try{
+    const photos=await photoAll();
+    photos.forEach(p=>add({type:"PHOTO_META",date:p.date,name:"Progress photo ("+(p.angle||"unknown")+")",entry_id:p.id||"",details:"image remains on-device and is not included in CSV"}));
+  }catch(err){ console.warn("Photo metadata export unavailable",err); }
+
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\r\n");
   const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
   a.download="fuellog-report-"+iso(new Date())+".csv";
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  toast("Report downloaded with fat split");
+  toast("Full report downloaded");
 }
 $("expBtn").onclick=exportCSV;
 
