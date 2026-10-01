@@ -103,9 +103,9 @@
         <circle id="ringArc" cx="98" cy="98" r="80" fill="none" stroke="var(--orange)" stroke-width="13"
           stroke-linecap="round" stroke-dasharray="502.65" stroke-dashoffset="502.65"
           transform="rotate(-90 98 98)" style="transition:stroke-dashoffset .6s ease"/>
-        <text id="ringNum" x="98" y="96" text-anchor="middle" font-family="Bebas Neue" font-size="48" fill="var(--ink)">2250</text>
+        <text id="ringNum" x="98" y="96" text-anchor="middle" font-family="Bebas Neue" font-size="48" fill="var(--ink)">2100</text>
         <text id="ringLab" x="98" y="116" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink-soft)" letter-spacing="1.5">KCAL LEFT</text>
-        <text id="ringSub" x="98" y="134" text-anchor="middle" font-size="11" fill="var(--ink-soft)">0 / 2250</text>
+        <text id="ringSub" x="98" y="134" text-anchor="middle" font-size="11" fill="var(--ink-soft)">0 / 2100</text>
       </svg>
       </div>
       <div class="row" style="margin-top:14px;gap:12px">
@@ -114,6 +114,14 @@
         <div class="mrow" data-macro="f" role="button" tabindex="0" style="cursor:pointer"><div class="mhead"><span>FAT ▾</span><span id="fV">0/70</span></div><div class="bar"><i id="fB" style="background:var(--amber);width:0%"></i></div></div>
       </div>
       <div class="muted" style="font-size:11px;margin-top:8px">Tap the ring or a macro to see which meals drove it</div>
+      <form id="calorieTargetForm" style="margin-top:14px;text-align:left">
+        <label for="calorieTarget" class="muted" style="display:block;font-weight:700;margin-bottom:6px">Daily calorie target (kcal)</label>
+        <div class="row">
+          <input id="calorieTarget" type="number" inputmode="numeric" min="1" max="20000" step="1" required value="2100" style="flex:1;min-width:0">
+          <button class="btn" type="submit">Save target</button>
+        </div>
+        <p class="tiny">Saved on this device. Applies to calorie totals, charts and exports. Macro goals stay unchanged.</p>
+      </form>
     </div>
 
     <!-- MACRO BREAKDOWN -->
@@ -391,7 +399,7 @@
 <script>
 "use strict";
 // ── constants ────────────────────────────────────────────────
-const T = { kcal:2250, protein:180, carbs:240, fat:70 };
+const T = { kcal:2100, protein:180, carbs:240, fat:70 };
 const START_W=79, LEAN=START_W*0.8, TARGET_BF=0.16;
 const TARGET_W=+(LEAN/(1-TARGET_BF)).toFixed(1);
 const QUICK_HISTORY_DAYS=120, MAX_QUICKS=500, PORTION_QUICK_LIMIT=20;
@@ -480,6 +488,9 @@ const K_TODAY = () => "fl:log:"+iso(new Date());
 const K_DAY = off => { const d=new Date(); d.setDate(d.getDate()-off); return "fl:log:"+iso(d); };
 const load = (k,def) => { try{ const v=localStorage.getItem(k); return v?JSON.parse(v):def; }catch{ return def; } };
 const save = (k,v) => { try{ localStorage.setItem(k,JSON.stringify(v)); }catch{ toast("Storage full — could not save"); } };
+const storedCalorieTarget = load("fl:calorieTarget", null);
+if(Number.isInteger(storedCalorieTarget) && storedCalorieTarget > 0 && storedCalorieTarget <= 20000) T.kcal = storedCalorieTarget;
+
 
 let viewDate = iso(new Date());                 // which day the log view shows
 const KV = () => "fl:log:"+viewDate;
@@ -1947,6 +1958,19 @@ function showTab(t){
 }
 $("tabToday").addEventListener("click",()=>showTab("today"));
 $("tabProg").addEventListener("click",()=>showTab("prog"));
+
+// Editable daily calorie target
+$("calorieTarget").value=T.kcal;
+$("calorieTargetForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  const value=Number($("calorieTarget").value);
+  if(!Number.isInteger(value)||value<=0||value>20000){ toast("Enter a whole-number calorie target between 1 and 20,000"); return; }
+  try{ localStorage.setItem("fl:calorieTarget",JSON.stringify(value)); }
+  catch{ toast("Could not save target — check device storage"); return; }
+  T.kcal=value;
+  renderToday(); renderProgress();
+  toast("Daily target saved: "+value+" kcal");
+});
 
 // init
 $("navelDate").value=iso(new Date());
