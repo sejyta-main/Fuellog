@@ -120,7 +120,8 @@
           <input id="calorieTarget" type="number" inputmode="numeric" min="1" max="20000" step="1" required value="2100" style="flex:1;min-width:0">
           <button class="btn" type="submit">Save target</button>
         </div>
-        <p class="tiny">Saved on this device. Applies to calorie totals, charts and exports. Macro goals stay unchanged.</p>
+        <p class="tiny">Saved on this device. A target change starts today; older days keep the target that was active then. Macro goals stay unchanged.</p>
+        <div id="calorieTargetHistoryNote" class="tiny" style="margin-top:6px"></div>
       </form>
     </div>
 
@@ -369,7 +370,7 @@
       <div class="muted" id="chBFcap" style="font-size:11.5px;margin:2px 0 14px"></div>
       <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">CALORIES — LAST 14 DAYS vs TARGET</div>
       <svg id="chK" width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Calorie chart"></svg>
-      <div class="muted" style="font-size:11.5px;margin:2px 0 14px">Green = at/under 2,250 · Amber = over · Dashed = target · Gray tick = no log</div>
+      <div class="muted" id="chKcap" style="font-size:11.5px;margin:2px 0 14px">Green = at/under the target active that day · Amber = over · Dashed = historical target · Gray tick = no log</div>
       <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:4px">PROTEIN — LAST 14 DAYS vs 180 G</div>
       <svg id="chP" width="100%" height="90" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Protein chart"></svg>
       <div class="muted" style="font-size:11.5px;margin:2px 0 14px">Green = 160g+ (muscle protected) · Amber = under · Dashed = 180g</div>
@@ -383,7 +384,7 @@
     <div class="card">
       <div class="h">EXPORT</div>
       <button class="btn full" id="expBtn">⬇ Download full report (CSV)</button>
-      <p class="tiny">Exports meals, daily totals, dedicated weight + body-fat fields, navel measurements, targets, Quick entries with usage history, grouped-Quick composition, trend summary, and progress-photo metadata. Photo images and AI credentials stay on-device and are never exported. Opens in Excel or Google Sheets.</p>
+      <p class="tiny">Exports meals, daily totals with the calorie target active on each date, calorie-target history, dedicated weight + body-fat fields, navel measurements, current targets, Quick entries with usage history, grouped-Quick composition, trend summary, and progress-photo metadata. Photo images and AI credentials stay on-device and are never exported. Opens in Excel or Google Sheets.</p>
     </div>
     <div class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:8px">
@@ -491,6 +492,54 @@ const save = (k,v) => { try{ localStorage.setItem(k,JSON.stringify(v)); }catch{ 
 const storedCalorieTarget = load("fl:calorieTarget", null);
 if(Number.isInteger(storedCalorieTarget) && storedCalorieTarget > 0 && storedCalorieTarget <= 20000) T.kcal = storedCalorieTarget;
 
+const LEGACY_CALORIE_TARGET=2250;
+let calorieTargetHistory=load("fl:calorieTargetHistory",[]);
+function earliestLoggedDate(){
+  const keys=Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).sort();
+  return keys.length?keys[0].slice(7):iso(new Date());
+}
+function normalizeCalorieTargetHistory(rows){
+  const byDate=new Map();
+  (Array.isArray(rows)?rows:[]).forEach(x=>{
+    const date=String(x?.date||"");
+    const kcal=Number(x?.kcal);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(date)&&Number.isInteger(kcal)&&kcal>0&&kcal<=20000) byDate.set(date,{date,kcal});
+  });
+  const out=[...byDate.values()].sort((a,b)=>a.date.localeCompare(b.date));
+  return out.filter((x,i)=>i===0||x.kcal!==out[i-1].kcal);
+}
+calorieTargetHistory=normalizeCalorieTargetHistory(calorieTargetHistory);
+if(!calorieTargetHistory.length){
+  const first=earliestLoggedDate();
+  // One-time migration for the target change made on 2026-10-01.
+  if(T.kcal===2100 && first<"2026-10-01"){
+    calorieTargetHistory=[{date:first,kcal:LEGACY_CALORIE_TARGET},{date:"2026-10-01",kcal:2100}];
+  }else{
+    calorieTargetHistory=[{date:first,kcal:T.kcal}];
+  }
+  save("fl:calorieTargetHistory",calorieTargetHistory);
+}
+function calorieTargetForDate(date){
+  let value=calorieTargetHistory.length?calorieTargetHistory[0].kcal:T.kcal;
+  for(const row of calorieTargetHistory){ if(row.date<=date) value=row.kcal; else break; }
+  return value;
+}
+function setCalorieTargetEffective(date,kcal){
+  calorieTargetHistory=normalizeCalorieTargetHistory([...calorieTargetHistory.filter(x=>x.date!==date),{date,kcal}]);
+  save("fl:calorieTargetHistory",calorieTargetHistory);
+}
+function shortTargetDate(date){
+  const d=new Date(date+"T12:00:00");
+  return d.toLocaleDateString([],{month:"short",day:"numeric"});
+}
+function renderCalorieTargetHistoryNote(){
+  const el=$("calorieTargetHistoryNote"); if(!el) return;
+  const recent=calorieTargetHistory.slice(-3);
+  el.textContent="Target history: "+recent.map((x,i)=>{
+    const isLast=i===recent.length-1;
+    return x.kcal.toLocaleString()+" kcal "+(isLast?"from ":"from ")+shortTargetDate(x.date);
+  }).join(" → ");
+}
 
 let viewDate = iso(new Date());                 // which day the log view shows
 const KV = () => "fl:log:"+viewDate;
@@ -550,12 +599,13 @@ function nextMealSuggestions(rem, nowH){
 }
 function renderToday(){
   const s = sum(meals);
-  const CIRC=502.65, pct=Math.min(s.kcal/T.kcal,1), rem=Math.round(T.kcal-s.kcal);
+  const dayKcalTarget=calorieTargetForDate(viewDate);
+  const CIRC=502.65, pct=Math.min(s.kcal/dayKcalTarget,1), rem=Math.round(dayKcalTarget-s.kcal);
   $("ringArc").style.strokeDashoffset = CIRC*(1-pct);
-  $("ringArc").setAttribute("stroke", s.kcal>T.kcal?"var(--amber)":"var(--orange)");
+  $("ringArc").setAttribute("stroke", s.kcal>dayKcalTarget?"var(--amber)":"var(--orange)");
   $("ringNum").textContent = Math.abs(rem);
   $("ringLab").textContent = rem<0?"KCAL OVER":"KCAL LEFT";
-  $("ringSub").textContent = Math.round(s.kcal)+" / "+T.kcal;
+  $("ringSub").textContent = Math.round(s.kcal)+" / "+dayKcalTarget;
   const bar=(v,t,V,B)=>{ $(V).textContent=Math.round(v)+"/"+t; $(B).style.width=Math.min(v/t*100,100)+"%"; };
   bar(s.p,T.protein,"pV","pB"); bar(s.c,T.carbs,"cV","cB"); bar(s.f,T.fat,"fV","fB");
 
@@ -568,7 +618,7 @@ function renderToday(){
   if(gl.length) fl.push(["red","Gluten check: "+gl.map(m=>esc(m.name)).join(", ")+". Verify labels — you are strictly gluten-free."]);
   const frac=Math.min(Math.max((h-6)/15,0),1);
   if(isToday && frac>0.35 && s.p < T.protein*frac-30){
-    const rem={kcal:Math.max(T.kcal-s.kcal,0), p:Math.max(T.protein-s.p,0), c:Math.max(T.carbs-s.c,0), f:Math.max(T.fat-s.f,0)};
+    const rem={kcal:Math.max(dayKcalTarget-s.kcal,0), p:Math.max(T.protein-s.p,0), c:Math.max(T.carbs-s.c,0), f:Math.max(T.fat-s.f,0)};
     sugCache=nextMealSuggestions(rem,h);
     let tip=`Protein tip: you're at <b>${Math.round(s.p)}g</b> with <b>${Math.round(rem.p)}g</b> and ${Math.round(rem.kcal)} kcal still to go.`;
     if(sugCache.length){
@@ -588,7 +638,7 @@ function renderToday(){
     fl.push(["blue",tip]);
   }
   if(s.p>=T.protein) fl.push(["green","180g protein reached — muscle protected for today."]);
-  if(s.kcal>T.kcal) fl.push(["amber",Math.round(s.kcal-T.kcal)+" kcal over. One day never decides the cut — go lean protein + veg for the rest of today."]);
+  if(s.kcal>dayKcalTarget) fl.push(["amber",Math.round(s.kcal-dayKcalTarget)+" kcal over. One day never decides the cut — go lean protein + veg for the rest of today."]);
   $("flags").innerHTML = fl.map(([t,x])=>`<div class="flag ${t}">${x}</div>`).join("");
 
   // meal list (with inline editing)
@@ -738,7 +788,7 @@ function logScaled(f,factor,saveVariant=false){
 
 // ── macro breakdown (tap PROTEIN/CARBS/FAT) ──────────────────
 let macroView=null; // null | 'p' | 'c' | 'f'
-const MACRO_META={ kcal:{label:"CALORIES",unit:" kcal",target:()=>T.kcal,color:"var(--orange)"},
+const MACRO_META={ kcal:{label:"CALORIES",unit:" kcal",target:()=>calorieTargetForDate(viewDate),color:"var(--orange)"},
                    p:{label:"PROTEIN",unit:"g",target:()=>T.protein,color:"var(--orange)"},
                    c:{label:"CARBS",unit:"g",target:()=>T.carbs,color:"var(--blue)"},
                    f:{label:"FAT",unit:"g",target:()=>T.fat,color:"var(--amber)"} };
@@ -1595,7 +1645,7 @@ function renderProgress(){
   days.forEach(d=>{
     html+=`<div class="meal" data-day="${d.isoDate}" role="button" tabindex="0" style="cursor:pointer"><span style="font-weight:600;font-size:14px">${d.key} <span class="muted" style="font-size:11px">✎</span></span>`+
       (d.logged
-        ? `<span style="font-size:14px"><span style="color:${d.s.kcal<=T.kcal*1.05?"var(--green)":"var(--amber)"};font-weight:700">${Math.round(d.s.kcal)} kcal</span><span class="muted"> · ${Math.round(d.s.p)}g P</span></span>`
+        ? `<span style="font-size:14px"><span style="color:${d.s.kcal<=calorieTargetForDate(d.isoDate)*1.05?"var(--green)":"var(--amber)"};font-weight:700">${Math.round(d.s.kcal)} kcal</span><span class="muted"> · ${Math.round(d.s.p)}g P</span></span>`
         : `<span class="muted">no log</span>`)+`</div>`;
   });
   $("weekList").innerHTML=html;
@@ -1813,6 +1863,28 @@ function barsChart(svgId, vals, target, goodFn){
   s+=`<line x1="0" y1="${ty.toFixed(1)}" x2="${W}" y2="${ty.toFixed(1)}" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.5"/>`;
   $(svgId).innerHTML=s;
 }
+function calorieBarsChart(svgId, vals){
+  const W=300,H=90,n=vals.length,bw=(W/n)*0.62;
+  const maxV=Math.max(...vals.map(x=>Math.max((x.target||0)*1.18,x.v||0)),1);
+  let s="";
+  vals.forEach((x,i)=>{
+    const cx=(i+0.5)*(W/n);
+    if(!x.logged){ s+=`<rect x="${(cx-bw/2).toFixed(1)}" y="${H-5}" width="${bw.toFixed(1)}" height="4" rx="2" fill="#C9CFDD"/>`; }
+    else{
+      const h=Math.max(x.v/maxV*(H-12),3);
+      const good=x.v<=x.target*1.05;
+      s+=`<rect x="${(cx-bw/2).toFixed(1)}" y="${(H-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${good?"var(--green)":"var(--amber)"}"/>`;
+    }
+    const ty=H-(x.target/maxV)*(H-12);
+    const x0=i*(W/n), x1=(i+1)*(W/n);
+    s+=`<line x1="${x0.toFixed(1)}" y1="${ty.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${ty.toFixed(1)}" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.55"/>`;
+    if(i>0&&vals[i-1].target!==x.target){
+      const prevY=H-(vals[i-1].target/maxV)*(H-12);
+      s+=`<line x1="${x0.toFixed(1)}" y1="${prevY.toFixed(1)}" x2="${x0.toFixed(1)}" y2="${ty.toFixed(1)}" stroke="var(--ink)" stroke-width="1" stroke-dasharray="2 3" opacity="0.4"/>`;
+    }
+  });
+  $(svgId).innerHTML=s;
+}
 function fatStackChart(svgId, vals, target){
   const W=300,H=90,n=vals.length,bw=(W/n)*0.62;
   const maxV=Math.max(target*1.25,...vals.map(x=>x.v||0));
@@ -1873,8 +1945,14 @@ function renderCharts(){
   }
   // Calories + protein: last 14 days
   const days=[];
-  for(let i=13;i>=0;i--){ const dm=load(K_DAY(i),[]); days.push({s:sum(dm),logged:dm.length>0}); }
-  barsChart("chK", days.map(d=>({v:d.s.kcal,logged:d.logged})), T.kcal, v=>v<=T.kcal*1.05);
+  for(let i=13;i>=0;i--){
+    const key=K_DAY(i), date=key.slice(7), dm=load(key,[]);
+    days.push({date,s:sum(dm),logged:dm.length>0,target:calorieTargetForDate(date)});
+  }
+  calorieBarsChart("chK", days.map(d=>({v:d.s.kcal,logged:d.logged,target:d.target})));
+  const changes=[];
+  days.forEach(d=>{ if(!changes.length||changes[changes.length-1].target!==d.target) changes.push({date:d.date,target:d.target}); });
+  $("chKcap").textContent="Green = at/under the target active that day · Amber = over · Dashed = historical target · "+changes.map(x=>x.target.toLocaleString()+" kcal from "+shortTargetDate(x.date)).join(" → ");
   barsChart("chP", days.map(d=>({v:d.s.p,logged:d.logged})), T.protein, v=>v>=T.protein*0.89);
   fatStackChart("chFat", days.map(d=>({v:d.s.f,sf:d.s.sf,logged:d.logged})), T.fat);
   barsChart("chC", days.map(d=>({v:d.s.c,logged:d.logged})), T.carbs, v=>v<=T.carbs*1.05);
@@ -1898,16 +1976,20 @@ async function exportCSV(){
     });
     const s=sum(dm), unsat=Math.round(Math.max(0,s.f-s.sf)*10)/10;
     const usedEstimate=dm.some(m=>m.sf==null||m.sfEstimated);
+    const dayTarget=calorieTargetForDate(date);
     add({type:"DAY_TOTAL",date,name:"Daily total ("+dm.length+" meals)",kcal:Math.round(s.kcal),protein_g:Math.round(s.p),carbs_g:Math.round(s.c),fat_g:Math.round(s.f),
       saturated_fat_g:s.sf.toFixed(1),unsaturated_fat_g:unsat.toFixed(1),fat_split_basis:usedEstimate?"daily total; includes auto-estimates":"daily total from stored values",
-      fat_split_confidence:usedEstimate?"mixed":"recorded",status:s.kcal<=T.kcal*1.05?"on target":"over by "+Math.round(s.kcal-T.kcal),details:"meal_count="+dm.length});
+      fat_split_confidence:usedEstimate?"mixed":"recorded",status:s.kcal<=dayTarget*1.05?"on target":"over by "+Math.round(s.kcal-dayTarget),
+      target_name:"Daily calories",target_value:dayTarget,target_unit:"kcal",details:"meal_count="+dm.length});
   });
 
   weights.forEach(w=>add({type:"WEIGHT",date:w.date,name:"Morning weigh-in",weight_kg:w.kg,body_fat_pct:w.bf!=null&&w.bf!==""?w.bf:""}));
   measurements.forEach(m=>add({type:"MEASUREMENT",date:m.date,name:"Navel circumference",navel_cm:(+m.navel).toFixed(1)}));
 
+  calorieTargetHistory.forEach(x=>add({type:"TARGET_HISTORY",date:x.date,name:"Daily calorie target",target_name:"Daily calories",target_value:x.kcal,target_unit:"kcal",details:"effective from this date"}));
+
   [
-    ["Daily calories",T.kcal,"kcal"],
+    ["Daily calories (current)",T.kcal,"kcal"],
     ["Daily protein",T.protein,"g"],
     ["Daily carbs",T.carbs,"g"],
     ["Daily fat",T.fat,"g"],
@@ -1968,8 +2050,10 @@ $("calorieTargetForm").addEventListener("submit",e=>{
   try{ localStorage.setItem("fl:calorieTarget",JSON.stringify(value)); }
   catch{ toast("Could not save target — check device storage"); return; }
   T.kcal=value;
+  setCalorieTargetEffective(iso(new Date()),value);
+  renderCalorieTargetHistoryNote();
   renderToday(); renderProgress();
-  toast("Daily target saved: "+value+" kcal");
+  toast("Daily target saved from today: "+value+" kcal");
 });
 
 // init
@@ -1977,6 +2061,7 @@ $("navelDate").value=iso(new Date());
 $("photoDate").value=iso(new Date());
 const satBackfilled=backfillSatFatHistory();
 if(satBackfilled){ meals=load(KV(),[]); }
+renderCalorieTargetHistoryNote();
 renderToday(); renderBuild(); renderProgress();
 if(satBackfilled) setTimeout(()=>toast("Fat history backfilled: "+satBackfilled+" meal"+(satBackfilled===1?"":"s")),120);
 </script>
