@@ -89,6 +89,7 @@
     <nav class="tabs">
       <button id="tabToday" class="on">Today</button>
       <button id="tabProg">Progress</button>
+      <button id="tabSettings" aria-label="Settings" title="Settings" style="font-size:18px;line-height:1">⚙</button>
     </nav>
   </header>
 
@@ -114,26 +115,6 @@
         <div class="mrow" data-macro="f" role="button" tabindex="0" style="cursor:pointer"><div class="mhead"><span>FAT ▾</span><span id="fV">0/70</span></div><div class="bar"><i id="fB" style="background:var(--amber);width:0%"></i></div></div>
       </div>
       <div class="muted" style="font-size:11px;margin-top:8px">Tap the ring or a macro to see which meals drove it</div>
-      <form id="calorieTargetForm" style="margin-top:14px;text-align:left">
-        <label for="calorieTarget" class="muted" style="display:block;font-weight:700;margin-bottom:6px">Daily calorie target (kcal)</label>
-        <div class="row">
-          <input id="calorieTarget" type="number" inputmode="numeric" min="1" max="20000" step="1" required value="2100" style="flex:1;min-width:0">
-          <button class="btn" type="submit">Save target</button>
-        </div>
-        <p class="tiny">Saved on this device. A target change starts today; older days keep the target that was active then.</p>
-        <div id="calorieTargetHistoryNote" class="tiny" style="margin-top:6px"></div>
-      </form>
-      <form id="macroTargetForm" style="margin-top:12px;text-align:left;border-top:1px solid var(--line);padding-top:12px">
-        <div class="muted" style="display:block;font-weight:700;margin-bottom:6px">Daily macro targets (g)</div>
-        <div class="row" style="gap:8px">
-          <label class="tiny" style="flex:1">Protein<input id="proteinTarget" type="number" inputmode="numeric" min="1" max="500" step="1" required value="180" style="width:100%;margin-top:4px"></label>
-          <label class="tiny" style="flex:1">Carbs<input id="carbsTarget" type="number" inputmode="numeric" min="1" max="800" step="1" required value="190" style="width:100%;margin-top:4px"></label>
-          <label class="tiny" style="flex:1">Fat<input id="fatTarget" type="number" inputmode="numeric" min="1" max="300" step="1" required value="70" style="width:100%;margin-top:4px"></label>
-        </div>
-        <button class="btn full ghost" type="submit" style="margin-top:8px">Save macro targets</button>
-        <p class="tiny">Changes start today and are kept historically for charts and exports.</p>
-        <div id="macroTargetHistoryNote" class="tiny" style="margin-top:6px"></div>
-      </form>
     </div>
 
     <!-- MACRO BREAKDOWN -->
@@ -404,6 +385,37 @@
       </div>
       <div id="weekList"></div>
       <p class="tiny">Consistency beats perfection — 6 solid days a week reaches 15–17% in roughly 10–14 weeks.</p>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="viewSettings" class="hidden">
+    <div class="card">
+      <div class="h">⚙ NUTRITION TARGETS</div>
+      <p class="tiny" style="margin-top:0">Changes are effective from the day you save them. FuelLog keeps older targets in the charts and CSV instead of rewriting history.</p>
+      <form id="calorieTargetForm" style="margin-top:14px;text-align:left">
+        <label for="calorieTarget" class="muted" style="display:block;font-weight:700;margin-bottom:6px">Daily calorie target (kcal)</label>
+        <div class="row">
+          <input id="calorieTarget" type="number" inputmode="numeric" min="1" max="20000" step="1" required value="2100" style="flex:1;min-width:0">
+          <button class="btn" type="submit">Save target</button>
+        </div>
+        <div id="calorieTargetHistoryNote" class="tiny" style="margin-top:7px"></div>
+      </form>
+      <form id="macroTargetForm" style="margin-top:16px;text-align:left;border-top:1px solid var(--line);padding-top:14px">
+        <div class="muted" style="display:block;font-weight:700;margin-bottom:8px">Daily macro targets (g)</div>
+        <div class="row" style="gap:8px">
+          <label class="tiny" style="flex:1">Protein<input id="proteinTarget" type="number" inputmode="numeric" min="1" max="500" step="1" required value="180" style="width:100%;margin-top:4px"></label>
+          <label class="tiny" style="flex:1">Carbs<input id="carbsTarget" type="number" inputmode="numeric" min="1" max="800" step="1" required value="190" style="width:100%;margin-top:4px"></label>
+          <label class="tiny" style="flex:1">Fat<input id="fatTarget" type="number" inputmode="numeric" min="1" max="300" step="1" required value="70" style="width:100%;margin-top:4px"></label>
+        </div>
+        <button class="btn full" type="submit" style="margin-top:10px">Save macro targets</button>
+        <div id="macroTargetHistoryNote" class="tiny" style="margin-top:7px"></div>
+      </form>
+    </div>
+    <div class="card">
+      <div class="h">CURRENT PLAN</div>
+      <div id="settingsCurrentTargets" style="font-size:15px;font-weight:700"></div>
+      <p class="tiny">Target history is also included in the full CSV export and shown as step changes in the Progress charts.</p>
     </div>
   </div>
 </div>
@@ -2114,17 +2126,33 @@ $("expBtn").onclick=exportCSV;
 
 // ── tabs ─────────────────────────────────────────────────────
 // ── tabs (error-proof: switching always works even if a render fails) ──
+function renderSettings(){
+  $("calorieTarget").value=T.kcal;
+  $("proteinTarget").value=T.protein;
+  $("carbsTarget").value=T.carbs;
+  $("fatTarget").value=T.fat;
+  renderCalorieTargetHistoryNote();
+  renderMacroTargetHistoryNote();
+  const el=$("settingsCurrentTargets");
+  if(el) el.textContent=`${T.kcal.toLocaleString()} kcal · ${T.protein}g protein · ${T.carbs}g carbs · ${T.fat}g fat`;
+}
 function showTab(t){
-  const today = t==="today";
+  const today=t==="today", prog=t==="prog", settings=t==="settings";
   $("viewToday").classList.toggle("hidden",!today);
-  $("viewProg").classList.toggle("hidden",today);
+  $("viewProg").classList.toggle("hidden",!prog);
+  $("viewSettings").classList.toggle("hidden",!settings);
   $("tabToday").classList.toggle("on",today);
-  $("tabProg").classList.toggle("on",!today);
-  try{ today ? renderToday() : renderProgress(); }
-  catch(err){ console.error("render error:",err); }
+  $("tabProg").classList.toggle("on",prog);
+  $("tabSettings").classList.toggle("on",settings);
+  try{
+    if(today) renderToday();
+    else if(prog) renderProgress();
+    else renderSettings();
+  }catch(err){ console.error("render error:",err); }
 }
 $("tabToday").addEventListener("click",()=>showTab("today"));
 $("tabProg").addEventListener("click",()=>showTab("prog"));
+$("tabSettings").addEventListener("click",()=>showTab("settings"));
 
 // Editable daily calorie + macro targets
 $("calorieTarget").value=T.kcal;
@@ -2140,7 +2168,7 @@ $("calorieTargetForm").addEventListener("submit",e=>{
   T.kcal=value;
   setCalorieTargetEffective(iso(new Date()),value);
   renderCalorieTargetHistoryNote();
-  renderToday(); renderProgress();
+  renderToday(); renderProgress(); renderSettings();
   toast("Daily target saved from today: "+value+" kcal");
 });
 $("macroTargetForm").addEventListener("submit",e=>{
@@ -2156,7 +2184,7 @@ $("macroTargetForm").addEventListener("submit",e=>{
   save("fl:macroTargets",{protein,carbs,fat});
   setMacroTargetsEffective(iso(new Date()),{protein,carbs,fat});
   renderMacroTargetHistoryNote();
-  renderToday(); renderProgress();
+  renderToday(); renderProgress(); renderSettings();
   toast("Macro targets saved from today");
 });
 
@@ -2167,6 +2195,7 @@ const satBackfilled=backfillSatFatHistory();
 if(satBackfilled){ meals=load(KV(),[]); }
 renderCalorieTargetHistoryNote();
 renderMacroTargetHistoryNote();
+renderSettings();
 renderToday(); renderBuild(); renderProgress();
 if(satBackfilled) setTimeout(()=>toast("Fat history backfilled: "+satBackfilled+" meal"+(satBackfilled===1?"":"s")),120);
 </script>
