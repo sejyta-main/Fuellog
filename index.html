@@ -1998,13 +1998,13 @@ async function renderPhotoProgress(){
         <div><div class="muted" style="font-size:10.5px;font-weight:700;text-align:center;margin-bottom:5px">B · ${esc(b.date.slice(5))}</div><img src="${ub}" alt="Comparison B" style="width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;border:1px solid var(--line)"><div class="tiny" style="text-align:center;margin-top:4px">${esc(mb)}</div></div>
       </div>`;
       const slider=`<div style="position:relative;width:86%;max-width:390px;margin:0 auto;aspect-ratio:3/4;overflow:hidden;border-radius:12px;border:1px solid var(--line);background:#eee">
-        <img src="${ua}" alt="Comparison A" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
-        <img id="photoReveal" src="${ub}" alt="Comparison B" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;clip-path:inset(0 50% 0 0)">
+        <img src="${ub}" alt="Comparison B" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
+        <img id="photoReveal" src="${ua}" alt="Comparison A" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;clip-path:inset(0 50% 0 0)">
         <div id="photoRevealLine" style="position:absolute;left:50%;top:0;bottom:0;width:2px;background:#fff;transform:translateX(-1px);pointer-events:none"></div>
         <div style="position:absolute;left:8px;top:8px;background:#ffffffdd;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:700">A ${esc(a.date.slice(5))}</div>
         <div style="position:absolute;right:8px;top:8px;background:#ffffffdd;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:700">B ${esc(b.date.slice(5))}</div>
       </div>
-      <input id="photoRevealRange" type="range" min="0" max="100" value="50" aria-label="Reveal comparison photo" style="width:86%;display:block;margin:10px auto 0">`;
+      <input id="photoRevealRange" type="range" min="0" max="100" value="50" aria-label="Move divider between comparison A and B" style="width:86%;display:block;margin:10px auto 0">`;
       box.innerHTML=`
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
           <label class="tiny">Compare A<select data-photo-compare="a" style="width:100%;margin-top:3px">${opts(a)}</select></label>
