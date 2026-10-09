@@ -319,20 +319,29 @@
       <div id="navelList"></div>
     </div>
     <div class="card">
-      <div class="h">PROGRESS PHOTOS</div>
-      <div class="row" style="margin-bottom:8px">
-        <input id="photoDate" type="date" aria-label="Progress photo date" style="flex:1.25">
-        <select id="photoAngle" aria-label="Progress photo angle" style="flex:1">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="h" style="margin:0">PROGRESS PHOTOS</div>
+        <select id="photoAngle" aria-label="Progress photo angle" style="width:auto;min-width:92px;padding:7px 9px">
           <option value="front">Front</option>
           <option value="side">Side</option>
           <option value="back">Back</option>
         </select>
       </div>
-      <input id="progPhotoIn" type="file" accept="image/*" class="hidden" aria-label="Choose progress photo">
-      <button class="btn full" id="progPhotoBtn">＋ Add progress photo</button>
-      <p class="tiny">Photos stay in this browser/PWA on your device — they are not uploaded to GitHub or included in the CSV. FuelLog compresses them to save space. Clearing site data will remove them.</p>
-      <div id="photoCompare" style="margin-top:12px"></div>
-      <div id="photoList" style="margin-top:6px"></div>
+      <div id="photoModeBar" style="display:flex;gap:6px;margin-bottom:10px;overflow-x:auto;padding-bottom:2px">
+        <button class="mtab" data-photo-mode="timeline">Timeline</button>
+        <button class="mtab" data-photo-mode="compare">Compare</button>
+        <button class="mtab" data-photo-mode="gallery">Gallery</button>
+      </div>
+      <div id="photoCompare"></div>
+      <div id="photoList" style="margin-top:10px"></div>
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+        <div class="row" style="margin-bottom:8px">
+          <input id="photoDate" type="date" aria-label="Progress photo date" style="flex:1.25">
+          <button class="btn" id="progPhotoBtn" style="flex:1">＋ Add photo</button>
+        </div>
+        <input id="progPhotoIn" type="file" accept="image/*" class="hidden" aria-label="Choose progress photo">
+        <p class="tiny" style="margin-bottom:0">Photos stay only in this browser/PWA. For useful comparisons, repeat the same angle, distance, lighting and relaxed pose. Clearing site data removes them.</p>
+      </div>
     </div>
     <div class="card">
       <div class="h">TREND → 15–17% BF</div>
@@ -1886,26 +1895,149 @@ async function compressProgressPhoto(file){
     return await new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(new Error("compression failed")),"image/jpeg",0.82));
   }catch{ return file; }
 }
+let photoMode=localStorage.getItem("fl:photoMode")||"timeline";
+let photoFocusId=localStorage.getItem("fl:photoFocusId")||"";
+let photoCompareA=localStorage.getItem("fl:photoCompareA")||"";
+let photoCompareB=localStorage.getItem("fl:photoCompareB")||"";
+let photoCompareLayout=localStorage.getItem("fl:photoCompareLayout")||"side";
+
+function photoDateMs(date){ return new Date(date+"T12:00:00").getTime(); }
+function photoDaysBetween(a,b){ return Math.round(Math.abs(photoDateMs(a)-photoDateMs(b))/86400000); }
+function nearestMetric(items,date,key,maxDays){
+  let best=null,bestD=Infinity;
+  (items||[]).forEach(x=>{
+    if(!x||!x.date||x[key]==null||x[key]==="") return;
+    const d=photoDaysBetween(x.date,date);
+    if(d<bestD){ best=x; bestD=d; }
+  });
+  return best&&bestD<=maxDays?{value:+best[key],date:best.date,days:bestD}:null;
+}
+function photoMetrics(p){
+  const w=nearestMetric(weights,p.date,"kg",3);
+  const n=nearestMetric(measurements,p.date,"navel",7);
+  return {w,n};
+}
+function photoMetricLine(p){
+  const m=photoMetrics(p), bits=[];
+  if(m.w) bits.push(m.w.value.toFixed(1)+" kg");
+  if(m.n) bits.push(m.n.value.toFixed(1)+" cm navel");
+  return bits.join(" · ");
+}
+function photoDeltaLine(a,b){
+  if(!a||!b) return "";
+  const ma=photoMetrics(a), mb=photoMetrics(b), bits=[photoDaysBetween(a.date,b.date)+" days"];
+  if(ma.w&&mb.w){
+    const d=mb.w.value-ma.w.value;
+    bits.push((d>0?"+":"")+d.toFixed(1)+" kg");
+  }
+  if(ma.n&&mb.n){
+    const d=mb.n.value-ma.n.value;
+    bits.push((d>0?"+":"")+d.toFixed(1)+" cm navel");
+  }
+  return bits.join(" · ");
+}
+function photoUrl(p){
+  const u=URL.createObjectURL(p.blob);
+  photoObjectUrls.push(u);
+  return u;
+}
+function photoThumb(p,active=false){
+  const u=photoUrl(p), metric=photoMetricLine(p);
+  return `<button data-photo-focus="${esc(p.id)}" aria-label="View photo from ${esc(p.date)}" style="flex:0 0 78px;border:${active?"2px solid var(--orange)":"1px solid var(--line)"};background:#fff;border-radius:10px;padding:4px;cursor:pointer;text-align:left">
+    <img src="${u}" alt="Progress photo ${esc(p.date)}" style="display:block;width:68px;height:88px;object-fit:cover;border-radius:7px">
+    <div style="font-size:10.5px;font-weight:700;margin-top:4px;text-align:center">${esc(p.date.slice(5))}</div>
+    ${metric?`<div class="muted" style="font-size:9px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(metric.split(" · ")[0])}</div>`:""}
+  </button>`;
+}
+function photoEmpty(angle){
+  return '<div class="muted" style="text-align:center;padding:18px 8px">No '+esc(angle)+' photos yet. Add one below, then repeat the same setup over time.</div>';
+}
 async function renderPhotoProgress(){
   const box=$("photoCompare"), list=$("photoList"); if(!box||!list||!window.indexedDB) return;
   photoObjectUrls.forEach(u=>URL.revokeObjectURL(u)); photoObjectUrls=[];
   try{
-    const all=(await photoAll()).sort((a,b)=>(a.date+a.createdAt).localeCompare(b.date+b.createdAt));
+    const all=(await photoAll()).sort((a,b)=>(a.date+(a.createdAt||"")).localeCompare(b.date+(b.createdAt||"")));
     const angle=$("photoAngle").value||"front", pts=all.filter(p=>p.angle===angle);
-    if(!pts.length){ box.innerHTML='<div class="muted" style="text-align:center;padding:12px 0">No '+esc(angle)+' photos yet. Add one now, then repeat under the same lighting and pose.</div>'; }
-    else {
-      const first=pts[0], last=pts[pts.length-1];
-      const u1=URL.createObjectURL(first.blob); photoObjectUrls.push(u1);
-      if(pts.length===1){
-        box.innerHTML=`<div style="text-align:center"><div class="muted" style="font-weight:700;margin-bottom:5px">${first.date} · ${esc(angle.toUpperCase())}</div><img src="${u1}" alt="Progress photo ${first.date}" style="width:72%;max-height:360px;object-fit:cover;border-radius:12px;border:1px solid var(--line)"><div class="tiny">Add another ${esc(angle)} photo later to unlock side-by-side comparison.</div></div>`;
-      } else {
-        const u2=URL.createObjectURL(last.blob); photoObjectUrls.push(u2);
-        box.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><div class="muted" style="font-weight:700;text-align:center;margin-bottom:5px">BEFORE · ${first.date.slice(5)}</div><img src="${u1}" alt="Earlier progress photo ${first.date}" style="width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;border:1px solid var(--line)"></div><div><div class="muted" style="font-weight:700;text-align:center;margin-bottom:5px">LATEST · ${last.date.slice(5)}</div><img src="${u2}" alt="Latest progress photo ${last.date}" style="width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;border:1px solid var(--line)"></div></div><div class="tiny" style="text-align:center">${pts.length} ${esc(angle)} photo${pts.length===1?"":"s"} · ${first.date} → ${last.date}</div>`;
-      }
+    document.querySelectorAll("[data-photo-mode]").forEach(b=>b.classList.toggle("on",b.dataset.photoMode===photoMode));
+
+    if(!pts.length){
+      box.innerHTML=photoEmpty(angle);
+      list.innerHTML="";
+      return;
     }
-    const recent=[...all].reverse().slice(0,8);
-    list.innerHTML=recent.length?recent.map(p=>`<div class="meal"><span style="font-size:13px"><b>${p.date.slice(5)}</b> <span class="muted">· ${esc(p.angle)}</span></span><button class="del" data-pdel="${esc(p.id)}" aria-label="Delete progress photo ${p.date}">✕</button></div>`).join(""):"";
-  }catch(err){ console.error("photo render",err); box.innerHTML='<div class="muted">Photo storage is unavailable in this browser.</div>'; }
+
+    if(photoMode==="timeline"){
+      let focus=pts.find(p=>p.id===photoFocusId)||pts[pts.length-1];
+      photoFocusId=focus.id; localStorage.setItem("fl:photoFocusId",photoFocusId);
+      const first=pts[0], latest=pts[pts.length-1], u=photoUrl(focus), metric=photoMetricLine(focus);
+      const progress=pts.length>1?photoDeltaLine(first,latest):"";
+      box.innerHTML=`
+        <div style="text-align:center">
+          <div class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:6px">${esc(angle.toUpperCase())} · ${pts.length} PHOTO${pts.length===1?"":"S"}</div>
+          <img src="${u}" alt="Progress photo ${esc(focus.date)}" style="width:76%;max-height:430px;aspect-ratio:3/4;object-fit:cover;border-radius:12px;border:1px solid var(--line)">
+          <div style="font-weight:700;margin-top:7px">${esc(focus.date)}</div>
+          ${metric?`<div class="muted" style="font-size:12px;margin-top:2px">${esc(metric)}</div>`:""}
+          ${progress?`<div class="tiny" style="margin-top:6px">First → latest: ${esc(progress)}</div>`:""}
+        </div>`;
+      list.innerHTML=`
+        <div class="muted" style="font-size:10.5px;font-weight:700;letter-spacing:1px;margin-bottom:6px">TAP ANY DATE TO REVIEW THE EVOLUTION</div>
+        <div style="display:flex;gap:7px;overflow-x:auto;padding:2px 1px 7px;scroll-snap-type:x proximity">
+          ${pts.map(p=>photoThumb(p,p.id===focus.id)).join("")}
+        </div>`;
+    } else if(photoMode==="compare"){
+      let a=pts.find(p=>p.id===photoCompareA)||pts[0];
+      let b=pts.find(p=>p.id===photoCompareB)||pts[pts.length-1];
+      if(a.id===b.id&&pts.length>1){ a=pts[0]; b=pts[pts.length-1]; }
+      photoCompareA=a.id; photoCompareB=b.id;
+      localStorage.setItem("fl:photoCompareA",a.id); localStorage.setItem("fl:photoCompareB",b.id);
+      const opts=p=>pts.map(x=>`<option value="${esc(x.id)}" ${x.id===p.id?"selected":""}>${esc(x.date)}</option>`).join("");
+      const delta=photoDeltaLine(a,b), ma=photoMetricLine(a), mb=photoMetricLine(b);
+      const ua=photoUrl(a), ub=photoUrl(b);
+      const side=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><div class="muted" style="font-size:10.5px;font-weight:700;text-align:center;margin-bottom:5px">A · ${esc(a.date.slice(5))}</div><img src="${ua}" alt="Comparison A" style="width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;border:1px solid var(--line)"><div class="tiny" style="text-align:center;margin-top:4px">${esc(ma)}</div></div>
+        <div><div class="muted" style="font-size:10.5px;font-weight:700;text-align:center;margin-bottom:5px">B · ${esc(b.date.slice(5))}</div><img src="${ub}" alt="Comparison B" style="width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:10px;border:1px solid var(--line)"><div class="tiny" style="text-align:center;margin-top:4px">${esc(mb)}</div></div>
+      </div>`;
+      const slider=`<div style="position:relative;width:86%;max-width:390px;margin:0 auto;aspect-ratio:3/4;overflow:hidden;border-radius:12px;border:1px solid var(--line);background:#eee">
+        <img src="${ua}" alt="Comparison A" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
+        <div id="photoReveal" style="position:absolute;inset:0;width:50%;overflow:hidden;border-right:2px solid #fff">
+          <img src="${ub}" alt="Comparison B" style="position:absolute;left:0;top:0;width:86vw;max-width:390px;height:100%;object-fit:cover">
+        </div>
+        <div style="position:absolute;left:8px;top:8px;background:#ffffffdd;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:700">A ${esc(a.date.slice(5))}</div>
+        <div style="position:absolute;right:8px;top:8px;background:#ffffffdd;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:700">B ${esc(b.date.slice(5))}</div>
+      </div>
+      <input id="photoRevealRange" type="range" min="0" max="100" value="50" aria-label="Reveal comparison photo" style="width:86%;display:block;margin:10px auto 0">`;
+      box.innerHTML=`
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <label class="tiny">Compare A<select data-photo-compare="a" style="width:100%;margin-top:3px">${opts(a)}</select></label>
+          <label class="tiny">Compare B<select data-photo-compare="b" style="width:100%;margin-top:3px">${opts(b)}</select></label>
+        </div>
+        <div style="display:flex;gap:6px;justify-content:center;margin-bottom:10px">
+          <button class="mtab ${photoCompareLayout==="side"?"on":""}" data-photo-layout="side">Side by side</button>
+          <button class="mtab ${photoCompareLayout==="slider"?"on":""}" data-photo-layout="slider">Slider</button>
+        </div>
+        ${photoCompareLayout==="slider"?slider:side}
+        <div style="text-align:center;font-weight:700;font-size:12px;margin-top:8px">${esc(delta)}</div>`;
+      list.innerHTML='<div class="tiny" style="text-align:center">Choose any two '+esc(angle)+' dates. Weight uses the closest weigh-in within 3 days; navel uses the closest measurement within 7 days.</div>';
+    } else {
+      box.innerHTML=`<div class="muted" style="font-size:10.5px;font-weight:700;letter-spacing:1px;margin-bottom:7px">${pts.length} ${esc(angle.toUpperCase())} PHOTO${pts.length===1?"":"S"} · OLDEST → NEWEST</div>`;
+      list.innerHTML=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px">${pts.map(p=>{
+        const u=photoUrl(p), metric=photoMetricLine(p);
+        return `<div style="border:1px solid var(--line);border-radius:11px;padding:6px;background:#fff">
+          <button data-photo-focus="${esc(p.id)}" data-photo-open-timeline="1" style="display:block;width:100%;padding:0;border:0;background:transparent;cursor:pointer">
+            <img src="${u}" alt="Progress photo ${esc(p.date)}" style="width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:8px">
+          </button>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:5px">
+            <div style="min-width:0"><div style="font-size:11.5px;font-weight:700">${esc(p.date)}</div>${metric?`<div class="muted" style="font-size:9.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(metric)}</div>`:""}</div>
+            <button class="del" data-pdel="${esc(p.id)}" aria-label="Delete progress photo ${esc(p.date)}">✕</button>
+          </div>
+        </div>`;
+      }).join("")}</div>`;
+    }
+  }catch(err){
+    console.error("photo render",err);
+    box.innerHTML='<div class="muted">Photo storage is unavailable in this browser.</div>';
+    list.innerHTML="";
+  }
 }
 $("progPhotoBtn").onclick=()=>$("progPhotoIn").click();
 $("progPhotoIn").addEventListener("change",async e=>{
@@ -1913,14 +2045,68 @@ $("progPhotoIn").addEventListener("change",async e=>{
   try{
     const date=$("photoDate").value||iso(new Date()), angle=$("photoAngle").value||"front";
     const blob=await compressProgressPhoto(file);
-    await photoPut({id:date+"-"+angle+"-"+Date.now(),date,angle,createdAt:String(Date.now()),blob});
+    const id=date+"-"+angle+"-"+Date.now();
+    await photoPut({id,date,angle,createdAt:String(Date.now()),blob});
+    photoFocusId=id; photoMode="timeline";
+    localStorage.setItem("fl:photoFocusId",photoFocusId);
+    localStorage.setItem("fl:photoMode",photoMode);
     await renderPhotoProgress(); toast("Progress photo saved on this device");
   }catch(err){ console.error(err); toast("Could not save progress photo"); }
 });
-$("photoAngle").addEventListener("change",renderPhotoProgress);
+$("photoAngle").addEventListener("change",()=>{
+  photoFocusId=""; photoCompareA=""; photoCompareB="";
+  renderPhotoProgress();
+});
 document.addEventListener("click",async e=>{
-  const pd=e.target.closest("[data-pdel]"); if(!pd) return;
-  try{ await photoRemove(pd.dataset.pdel); await renderPhotoProgress(); toast("Progress photo deleted"); }catch(err){ console.error(err); }
+  const mode=e.target.closest("[data-photo-mode]");
+  if(mode){
+    photoMode=mode.dataset.photoMode;
+    localStorage.setItem("fl:photoMode",photoMode);
+    await renderPhotoProgress();
+    return;
+  }
+  const focus=e.target.closest("[data-photo-focus]");
+  if(focus){
+    photoFocusId=focus.dataset.photoFocus;
+    localStorage.setItem("fl:photoFocusId",photoFocusId);
+    if(focus.dataset.photoOpenTimeline==="1"){
+      photoMode="timeline";
+      localStorage.setItem("fl:photoMode",photoMode);
+    }
+    await renderPhotoProgress();
+    return;
+  }
+  const layout=e.target.closest("[data-photo-layout]");
+  if(layout){
+    photoCompareLayout=layout.dataset.photoLayout;
+    localStorage.setItem("fl:photoCompareLayout",photoCompareLayout);
+    await renderPhotoProgress();
+    return;
+  }
+  const pd=e.target.closest("[data-pdel]");
+  if(pd){
+    try{
+      if(pd.dataset.pdel===photoFocusId) photoFocusId="";
+      if(pd.dataset.pdel===photoCompareA) photoCompareA="";
+      if(pd.dataset.pdel===photoCompareB) photoCompareB="";
+      await photoRemove(pd.dataset.pdel);
+      await renderPhotoProgress(); toast("Progress photo deleted");
+    }catch(err){ console.error(err); }
+  }
+});
+document.addEventListener("change",async e=>{
+  const cmp=e.target.closest("[data-photo-compare]");
+  if(!cmp) return;
+  if(cmp.dataset.photoCompare==="a") photoCompareA=cmp.value;
+  else photoCompareB=cmp.value;
+  localStorage.setItem("fl:photoCompareA",photoCompareA);
+  localStorage.setItem("fl:photoCompareB",photoCompareB);
+  await renderPhotoProgress();
+});
+document.addEventListener("input",e=>{
+  if(e.target.id!=="photoRevealRange") return;
+  const reveal=$("photoReveal");
+  if(reveal) reveal.style.width=e.target.value+"%";
 });
 
 // ── trends charts (MacroFactor-style) ────────────────────────
