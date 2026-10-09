@@ -1999,9 +1999,8 @@ async function renderPhotoProgress(){
       </div>`;
       const slider=`<div style="position:relative;width:86%;max-width:390px;margin:0 auto;aspect-ratio:3/4;overflow:hidden;border-radius:12px;border:1px solid var(--line);background:#eee">
         <img src="${ua}" alt="Comparison A" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">
-        <div id="photoReveal" style="position:absolute;inset:0;width:50%;overflow:hidden;border-right:2px solid #fff">
-          <img src="${ub}" alt="Comparison B" style="position:absolute;left:0;top:0;width:86vw;max-width:390px;height:100%;object-fit:cover">
-        </div>
+        <img id="photoReveal" src="${ub}" alt="Comparison B" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;clip-path:inset(0 50% 0 0)">
+        <div id="photoRevealLine" style="position:absolute;left:50%;top:0;bottom:0;width:2px;background:#fff;transform:translateX(-1px);pointer-events:none"></div>
         <div style="position:absolute;left:8px;top:8px;background:#ffffffdd;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:700">A ${esc(a.date.slice(5))}</div>
         <div style="position:absolute;right:8px;top:8px;background:#ffffffdd;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:700">B ${esc(b.date.slice(5))}</div>
       </div>
@@ -2105,8 +2104,9 @@ document.addEventListener("change",async e=>{
 });
 document.addEventListener("input",e=>{
   if(e.target.id!=="photoRevealRange") return;
-  const reveal=$("photoReveal");
-  if(reveal) reveal.style.width=e.target.value+"%";
+  const reveal=$("photoReveal"), line=$("photoRevealLine"), v=Math.max(0,Math.min(100,+e.target.value||0));
+  if(reveal) reveal.style.clipPath="inset(0 "+(100-v)+"% 0 0)";
+  if(line) line.style.left=v+"%";
 });
 
 // ── trends charts (MacroFactor-style) ────────────────────────
