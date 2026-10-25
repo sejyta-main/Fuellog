@@ -357,7 +357,8 @@ export async function handleRequest(request, env, deps = {}) {
       const status = errorStatus(error);
       const timeout = error?.name === "AbortError" || error?.name === "RequestTimeoutError";
       const upstream = status > 0;
-      return errorResponse(request, env, status === 429 ? 429 : timeout ? 504 : 502, timeout ? "TIMEOUT" : upstream ? "GEMINI_ERROR" : "INVALID_RESPONSE", timeout ? "Gemini did not respond in time." : upstream ? upstreamMessage(status, error?.message) : "Gemini returned an invalid test response.", id, timeout || RETRYABLE_STATUS.has(status));
+      const invalidDetail = cleanText(error?.cause?.message || error?.message, 180);
+      return errorResponse(request, env, status === 429 ? 429 : timeout ? 504 : 502, timeout ? "TIMEOUT" : upstream ? "GEMINI_ERROR" : "INVALID_RESPONSE", timeout ? "Gemini did not respond in time." : upstream ? upstreamMessage(status, error?.message) : "Gemini returned an invalid test response: "+(invalidDetail||"unknown validation error"), id, timeout || RETRYABLE_STATUS.has(status));
     }
   }
 
