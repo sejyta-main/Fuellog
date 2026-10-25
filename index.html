@@ -236,10 +236,11 @@
         <p style="font-size:13.5px;line-height:1.5;margin:0 0 8px">
           Connect to your private FuelLog AI service. Your Gemini key stays encrypted on the server and is never stored in this page.
         </p>
-        <input id="aiUrlInput" inputmode="url" autocomplete="url" placeholder="https://fuellog-ai.…workers.dev" style="margin-bottom:8px" aria-label="FuelLog AI service URL">
-        <input id="aiTokenInput" type="password" autocomplete="off" placeholder="Private FuelLog access code" style="margin-bottom:8px" aria-label="FuelLog AI access code">
+        <input id="aiUrlInput" inputmode="url" autocomplete="url" placeholder="https://fuellog-ai.sejyta.workers.dev" style="margin-bottom:8px" aria-label="FuelLog AI service URL">
+        <input id="aiTokenInput" type="password" name="fuellog-ai-access-code" autocomplete="current-password" placeholder="Private FuelLog access code" style="margin-bottom:8px" aria-label="FuelLog AI access code">
         <button class="btn full" id="aiConfigSave">Connect AI service</button>
-        <p class="tiny">The service URL and access code stay on this device. Meal photos are sent only when you choose Camera or Gallery. Use Portions/Search when you prefer not to upload a photo.</p>
+        <div id="aiConnectStatus" class="tiny" style="margin-top:7px"></div>
+        <p class="tiny">FuelLog knows your private Worker address automatically. The access code stays only on this device, with a second on-device backup so an accidental settings reset can be recovered. Meal photos are sent only when you choose Camera or Gallery.</p>
       </div>
       <div id="aiReady" class="hidden">
         <div class="flag green" id="aiServiceLabel" style="margin-bottom:8px">✓ Secure AI configured</div>
@@ -651,7 +652,14 @@ let measurements = load("fl:measurements",[]);
 let build = [];
 let pending = null;
 let editingId = null;
-let aiConfig = load("fl:aiConfig",{url:"",token:""});
+const AI_CONFIG_KEY="fl:aiConfig";
+const DEFAULT_AI_SERVICE_URL="https://fuellog-ai.sejyta.workers.dev";
+const AI_BACKUP_DB="FuelLogPrivateConfig", AI_BACKUP_STORE="kv";
+let aiConfig = load(AI_CONFIG_KEY,{url:"",token:""});
+if(aiConfig&&aiConfig.token&&!aiConfig.url){
+  aiConfig={...aiConfig,url:DEFAULT_AI_SERVICE_URL};
+  save(AI_CONFIG_KEY,aiConfig);
+}
 let chatHistory = load("fl:chat",[]).filter(x=>x&&["user","assistant"].includes(x.role)&&x.content).slice(-20);
 // Remove credentials from the retired direct-browser integration.
 localStorage.removeItem("fl:key");
@@ -963,7 +971,7 @@ $("groupSave").onclick=()=>{
 };
 $("bBuild").onclick=()=>{ togglePanel("panelBuild","bBuild"); if(!$("panelBuild").classList.contains("hidden")) renderPortionSelect(); };
 $("bManual").onclick=()=>togglePanel("panelManual","bManual");
-$("bAI").onclick=()=>{ togglePanel("panelAI","bAI"); refreshAIPanel(); };
+$("bAI").onclick=async()=>{ togglePanel("panelAI","bAI"); refreshAIPanel(); if(!(aiConfig.url&&aiConfig.token)) await recoverAIConfig(); };
 
 // ── day navigation (view/edit any past day) ──────────────────
 function gotoDate(dISO){
@@ -1356,6 +1364,61 @@ $("mLog").onclick=()=>{
 };
 
 // ── AI (secure Worker backend) ───────────────────────────────
+function openAIConfigDB(){
+  if(!window.indexedDB) return Promise.reject(new Error("IndexedDB unavailable"));
+  return new Promise((resolve,reject)=>{
+    const r=indexedDB.open(AI_BACKUP_DB,1);
+    r.onupgradeneeded=()=>{ const db=r.result; if(!db.objectStoreNames.contains(AI_BACKUP_STORE)) db.createObjectStore(AI_BACKUP_STORE,{keyPath:"id"}); };
+    r.onsuccess=()=>resolve(r.result);
+    r.onerror=()=>reject(r.error);
+  });
+}
+async function backupAIConfig(config){
+  if(!config?.url||!config?.token) return;
+  const db=await openAIConfigDB();
+  await new Promise((resolve,reject)=>{
+    const tx=db.transaction(AI_BACKUP_STORE,"readwrite");
+    tx.objectStore(AI_BACKUP_STORE).put({id:"aiConfig",value:{url:config.url,token:config.token}});
+    tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error);
+  });
+  db.close();
+}
+async function readAIConfigBackup(){
+  const db=await openAIConfigDB();
+  const value=await new Promise((resolve,reject)=>{
+    const tx=db.transaction(AI_BACKUP_STORE,"readonly"), r=tx.objectStore(AI_BACKUP_STORE).get("aiConfig");
+    r.onsuccess=()=>resolve(r.result?.value||null); r.onerror=()=>reject(r.error);
+  });
+  db.close(); return value;
+}
+async function clearAIConfigBackup(){
+  const db=await openAIConfigDB();
+  await new Promise((resolve,reject)=>{
+    const tx=db.transaction(AI_BACKUP_STORE,"readwrite");
+    tx.objectStore(AI_BACKUP_STORE).delete("aiConfig");
+    tx.oncomplete=resolve; tx.onerror=()=>reject(tx.error);
+  });
+  db.close();
+}
+async function recoverAIConfig(){
+  if(aiConfig.url&&aiConfig.token){ backupAIConfig(aiConfig).catch(()=>{}); return true; }
+  try{
+    const saved=await readAIConfigBackup();
+    if(saved?.token){
+      const url=normalizedServiceUrl(saved.url||DEFAULT_AI_SERVICE_URL);
+      if(url){
+        aiConfig={url,token:String(saved.token)};
+        save(AI_CONFIG_KEY,aiConfig);
+        refreshAIPanel();
+        $("aiStatus").textContent="Connection restored from this device.";
+        toast("AI connection restored");
+        return true;
+      }
+    }
+  }catch{}
+  refreshAIPanel();
+  return false;
+}
 function normalizedServiceUrl(value){
   const raw=String(value||"").trim().replace(/\/+$/,"");
   try{
@@ -1372,21 +1435,42 @@ function refreshAIPanel(){
   if(ready){
     try{ $("aiServiceLabel").textContent="✓ Secure AI · "+new URL(aiConfig.url).hostname; }
     catch{ $("aiServiceLabel").textContent="✓ Secure AI configured"; }
+  }else{
+    if(!$("aiUrlInput").value) $("aiUrlInput").value=aiConfig.url||DEFAULT_AI_SERVICE_URL;
+    $("aiConnectStatus").textContent="Worker found. Enter your private access code to reconnect.";
   }
 }
-$("aiConfigSave").onclick=()=>{
-  const url=normalizedServiceUrl($("aiUrlInput").value);
+$("aiConfigSave").onclick=async()=>{
+  const url=normalizedServiceUrl($("aiUrlInput").value||DEFAULT_AI_SERVICE_URL);
   const token=$("aiTokenInput").value.trim();
-  if(!url){ toast("Enter a valid HTTPS Worker URL"); return; }
-  if(token.length<12){ toast("Access code must be at least 12 characters"); return; }
-  aiConfig={url,token}; save("fl:aiConfig",aiConfig);
-  $("aiUrlInput").value=""; $("aiTokenInput").value="";
-  refreshAIPanel(); toast("Secure AI service saved");
+  if(!url){ $("aiConnectStatus").textContent="✗ Enter a valid HTTPS Worker URL."; return; }
+  if(token.length<12){ $("aiConnectStatus").textContent="✗ Access code must be at least 12 characters."; return; }
+  const btn=$("aiConfigSave"), old=btn.textContent, candidate={url,token};
+  btn.disabled=true; btn.textContent="Connecting…";
+  $("aiConnectStatus").textContent="Checking the Worker and Gemini…";
+  try{
+    const data=await aiRequestWithConfig(candidate,"/health");
+    aiConfig=candidate; save(AI_CONFIG_KEY,aiConfig);
+    await backupAIConfig(aiConfig).catch(()=>{});
+    if(navigator.storage?.persist) navigator.storage.persist().catch(()=>{});
+    $("aiUrlInput").value=""; $("aiTokenInput").value="";
+    $("aiConnectStatus").textContent="";
+    refreshAIPanel();
+    $("aiStatus").textContent="✓ Connected and verified · "+(data.model||"Gemini");
+    toast("Secure AI reconnected");
+  }catch(err){
+    $("aiConnectStatus").textContent="✗ "+friendlyAIError(err);
+  }finally{
+    btn.disabled=false; btn.textContent=old;
+  }
 };
-$("aiConfigClear").onclick=()=>{
-  $("aiUrlInput").value=aiConfig.url||"";
-  aiConfig={url:"",token:""}; localStorage.removeItem("fl:aiConfig");
-  $("aiStatus").textContent=""; refreshAIPanel();
+$("aiConfigClear").onclick=async()=>{
+  if(!confirm("Disconnect FuelLog AI on this device? This will also remove the local backup of the access code.")) return;
+  $("aiUrlInput").value=aiConfig.url||DEFAULT_AI_SERVICE_URL;
+  aiConfig={url:"",token:""}; localStorage.removeItem(AI_CONFIG_KEY);
+  await clearAIConfigBackup().catch(()=>{});
+  $("aiStatus").textContent=""; $("aiConnectStatus").textContent="Disconnected on this device.";
+  refreshAIPanel();
 };
 
 class AIServiceError extends Error{
@@ -1402,16 +1486,16 @@ function friendlyAIError(err){
   if(err?.message==="Failed to fetch") return "Could not reach the AI service. Check the Worker URL and internet connection.";
   return err?.message||"The meal could not be analyzed.";
 }
-async function aiRequest(path,payload){
-  if(!aiConfig.url||!aiConfig.token) throw new AIServiceError("AI service is not configured.","NOT_CONFIGURED",0,false);
+async function aiRequestWithConfig(config,path,payload){
+  if(!config?.url||!config?.token) throw new AIServiceError("AI service is not configured.","NOT_CONFIGURED",0,false);
   let lastError;
   for(let attempt=0;attempt<2;attempt++){
     const ctrl=new AbortController();
     const timer=setTimeout(()=>ctrl.abort(),45000);
     try{
-      const res=await fetch(aiConfig.url+path,{
+      const res=await fetch(config.url+path,{
         method:"POST",signal:ctrl.signal,
-        headers:{"Content-Type":"application/json","Authorization":"Bearer "+aiConfig.token},
+        headers:{"Content-Type":"application/json","Authorization":"Bearer "+config.token},
         body:payload==null?undefined:JSON.stringify(payload)
       });
       const data=await res.json().catch(()=>({}));
@@ -1429,6 +1513,7 @@ async function aiRequest(path,payload){
   }
   throw lastError;
 }
+async function aiRequest(path,payload){ return aiRequestWithConfig(aiConfig,path,payload); }
 function setAIWorking(working,message=""){
   ["aiTest","descGo","photoAnalyze","photoCam","photoIn","chatSend"].forEach(id=>{ const el=$(id); if(el) el.disabled=working; });
   $("aiStatus").textContent=message;
@@ -2400,7 +2485,7 @@ if(satBackfilled){ meals=load(KV(),[]); }
 renderCalorieTargetHistoryNote();
 renderMacroTargetHistoryNote();
 renderSettings();
-renderToday(); renderBuild(); renderProgress();
+renderToday(); renderBuild(); renderProgress(); refreshAIPanel(); recoverAIConfig();
 if(satBackfilled) setTimeout(()=>toast("Fat history backfilled: "+satBackfilled+" meal"+(satBackfilled===1?"":"s")),120);
 </script>
 </body>
