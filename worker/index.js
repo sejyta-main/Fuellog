@@ -250,29 +250,55 @@ function promptFor(body) {
 }
 
 async function callGemini(body, env) {
-  const input = [{ type: "text", text: promptFor(body) }];
-  if (body.kind === "photo") {
-    input.push({ type: "image", mime_type: body.image.mimeType, data: body.image.data });
-  }
-  const client = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
   return runWithModelFallback(env, "meal", async model => {
-    const interaction = await client.interactions.create({
-      model,
-      input,
-      system_instruction: SYSTEM_PROMPT,
-      generation_config: { temperature: 0 },
-      response_format: { type: "text", mime_type: "application/json", schema: MEAL_SCHEMA },
-      store: false
-    }, {
-      timeout_ms: 35_000,
-      retries: { strategy: "none" }
-    });
-    if (!interaction.output_text) throw invalidModelResponse(new Error("AI returned no text"));
+    const parts = [{ text: promptFor(body) }];
+    if (body.kind === "photo") {
+      parts.push({ inline_data: { mime_type: body.image.mimeType, data: body.image.data } });
+    }
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": env.GEMINI_API_KEY
+        },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: [{ role: "user", parts }],
+          generationConfig: {
+            response_mime_type: "application/json",
+            response_json_schema: MEAL_SCHEMA
+          }
+        })
+      }
+    );
+
+    const raw = await response.text();
+    if (!response.ok) {
+      let detail = raw;
+      try {
+        const parsed = JSON.parse(raw);
+        detail = parsed?.error?.message || raw;
+      } catch {}
+      const error = new Error(cleanText(detail, 500) || `Gemini HTTP ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
+
+    let payload;
+    try { payload = JSON.parse(raw); }
+    catch (error) { throw invalidModelResponse(error); }
+
+    const text = (payload?.candidates?.[0]?.content?.parts || [])
+      .map(part => typeof part?.text === "string" ? part.text : "")
+      .join("")
+      .trim();
+
+    if (!text) throw invalidModelResponse(new Error("Gemini returned no text"));
     try {
-      // Validate inside the per-model attempt. If a model violates the structured
-      // nutrition schema, runWithModelFallback can immediately try the next model
-      // instead of sending the same broken payload back to the user.
-      return JSON.stringify(normalizeMeal(decodeJson(interaction.output_text)));
+      return JSON.stringify(normalizeMeal(decodeJson(text)));
     } catch (error) {
       throw invalidModelResponse(error);
     }
