@@ -86,7 +86,12 @@
   .hidden{display:none !important}
   .mtab{border:1px solid var(--line);background:var(--bg);color:var(--ink-soft);border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
   .mtab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
-  .progress-nav{display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px;margin-bottom:2px;scrollbar-width:none}
+  .progress-nav{
+    position:sticky;top:55px;z-index:42;
+    display:flex;gap:6px;overflow-x:auto;padding:7px 2px 10px;margin:0 -2px 2px;
+    scrollbar-width:none;background:rgba(238,241,247,.96);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)
+  }
   .progress-nav::-webkit-scrollbar{display:none}
   .progress-nav .mtab{flex:0 0 auto;padding:8px 12px;min-height:36px;background:var(--card)}
   .progress-nav .mtab.on{background:var(--ink);color:#fff}
@@ -1850,13 +1855,15 @@ function renderProgress(){
   $("streak").textContent=streakN>0?"🔥 "+streakN+"-day streak":"";
 }
 
-let progressSection=localStorage.getItem("fl:progressSection")||"summary";
-if(!["summary","weight","waist","photos","charts"].includes(progressSection)) progressSection="summary";
+let progressSection="summary";
 function setProgressSection(section,{scroll=false}={}){
   if(!["summary","weight","waist","photos","charts"].includes(section)) section="summary";
   progressSection=section;
-  localStorage.setItem("fl:progressSection",progressSection);
-  document.querySelectorAll("[data-progress-section]").forEach(b=>b.classList.toggle("on",b.dataset.progressSection===progressSection));
+  document.querySelectorAll("[data-progress-section]").forEach(b=>{
+    const on=b.dataset.progressSection===progressSection;
+    b.classList.toggle("on",on);
+    b.setAttribute("aria-selected",on?"true":"false");
+  });
   document.querySelectorAll("[data-progress-panel]").forEach(panel=>panel.classList.toggle("hidden",panel.dataset.progressPanel!==progressSection));
   if(progressSection==="photos"){
     renderPhotoProgress();
@@ -2473,9 +2480,9 @@ function showTab(t){
   $("tabProg").classList.toggle("on",prog);
   $("tabSettings").classList.toggle("on",settings);
   try{
-    if(today) renderToday();
-    else if(prog) renderProgress();
-    else renderSettings();
+    if(today){ setProgressSection("summary"); renderToday(); }
+    else if(prog){ progressSection="summary"; renderProgress(); }
+    else{ setProgressSection("summary"); renderSettings(); }
   }catch(err){ console.error("render error:",err); }
 }
 $("tabToday").addEventListener("click",()=>showTab("today"));
