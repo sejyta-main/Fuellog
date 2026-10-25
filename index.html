@@ -10,7 +10,7 @@
 <link rel="manifest" href="./manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-<title>FuelLog — Cut to 15–17%</title>
+<title>FuelLog — Private-first nutrition & progress</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -2363,15 +2363,16 @@ function renderCharts(){
   } else {
     const raw=bfPts.map(p=>+p.bf);
     const sm=raw.map((v,i)=>{ const w=raw.slice(Math.max(0,i-4),i+1); return w.reduce((a,b)=>a+b,0)/w.length; });
-    let mn=Math.min(...raw,...sm,15)-0.5, mx=Math.max(...raw,...sm,17)+0.5;
+    const bfGoal=targetBFPct;
+    const allVals=bfGoal!=null?[...raw,...sm,bfGoal]:[...raw,...sm];
+    let mn=Math.min(...allVals)-0.5, mx=Math.max(...allVals)+0.5;
     const X=i=>(i/(bfPts.length-1))*300, Y=v=>90-((v-mn)/(mx-mn))*80-5;
-    let s=`<rect x="0" y="${Y(17).toFixed(1)}" width="300" height="${(Y(15)-Y(17)).toFixed(1)}" fill="#188A5618"/>`;
-    s+=`<line x1="0" y1="${Y(17).toFixed(1)}" x2="300" y2="${Y(17).toFixed(1)}" stroke="var(--green)" stroke-width="1" stroke-dasharray="4 4" opacity=".6"/>`;
-    s+=`<line x1="0" y1="${Y(15).toFixed(1)}" x2="300" y2="${Y(15).toFixed(1)}" stroke="var(--green)" stroke-width="1" stroke-dasharray="4 4" opacity=".6"/>`;
+    let s="";
+    if(bfGoal!=null) s+=`<line x1="0" y1="${Y(bfGoal).toFixed(1)}" x2="300" y2="${Y(bfGoal).toFixed(1)}" stroke="var(--green)" stroke-width="1.5" stroke-dasharray="4 4" opacity=".7"/>`;
     bfPts.forEach((p,i)=>{ s+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(+p.bf).toFixed(1)}" r="2.8" fill="#9AA6C0"/>`; });
     s+=`<path d="${sm.map((v,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--blue)" stroke-width="2.7" stroke-linecap="round"/>`;
     $("chBF").innerHTML=s;
-    $("chBFcap").textContent=`Gray dots = raw scale BF · Blue = 5-reading trend (${sm[sm.length-1].toFixed(1)}%) · Latest raw ${raw[raw.length-1].toFixed(1)}% · green band = 15–17% goal`;
+    $("chBFcap").textContent=`Gray dots = raw scale BF · Blue = 5-reading trend (${sm[sm.length-1].toFixed(1)}%) · Latest raw ${raw[raw.length-1].toFixed(1)}%`+(bfGoal!=null?` · dashed = local goal ${bfGoal}%`:"");
   }
   // Calories + protein: last 14 days
   const days=[];
