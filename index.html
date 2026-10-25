@@ -1858,7 +1858,18 @@ function setProgressSection(section,{scroll=false}={}){
   localStorage.setItem("fl:progressSection",progressSection);
   document.querySelectorAll("[data-progress-section]").forEach(b=>b.classList.toggle("on",b.dataset.progressSection===progressSection));
   document.querySelectorAll("[data-progress-panel]").forEach(panel=>panel.classList.toggle("hidden",panel.dataset.progressPanel!==progressSection));
-  if(progressSection==="photos") renderPhotoProgress();
+  if(progressSection==="photos"){
+    renderPhotoProgress();
+  }else{
+    // Do not keep progress-photo object URLs mounted while another Progress section is open.
+    if(typeof photoObjectUrls!=="undefined"){
+      photoObjectUrls.forEach(u=>URL.revokeObjectURL(u));
+      photoObjectUrls=[];
+    }
+    const photoBox=$("photoCompare"), photoList=$("photoList");
+    if(photoBox) photoBox.innerHTML="";
+    if(photoList) photoList.innerHTML="";
+  }
   if(scroll) $("progressNav")?.scrollIntoView({behavior:"smooth",block:"start"});
 }
 document.addEventListener("click",e=>{
