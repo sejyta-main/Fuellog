@@ -35,12 +35,31 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           APP_TOKEN: ${{ secrets.FUELLOG_APP_TOKEN }}
+      - name: Probe Gemini model latency
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set +e
+          for MODEL in gemini-3.5-flash-lite gemini-3.6-flash gemini-3.8-flash; do
+            echo "Probing $MODEL"
+            RESULT=$(curl --silent --show-error --max-time 12 --output "probe-$MODEL.json" --write-out "%{http_code} %{time_total}" \
+              -X POST "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent" \
+              -H "Content-Type: application/json" \
+              -H "x-goog-api-key: $GEMINI_API_KEY" \
+              --data '{"contents":[{"parts":[{"text":"Reply only with OK"}]}]}')
+            EXIT_CODE=$?
+            echo "$MODEL => curl=$EXIT_CODE http/time=$RESULT"
+            if [ "$EXIT_CODE" -eq 0 ]; then
+              head -c 300 "probe-$MODEL.json"; echo
+            fi
+          done
+          exit 0
       - name: Smoke test live AI Worker
         env:
           FUELLOG_APP_TOKEN: ${{ secrets.FUELLOG_APP_TOKEN }}
         run: |
           set +e
-          HTTP_CODE=$(curl --silent --show-error --output health-response.json --write-out "%{http_code}" \
+          HTTP_CODE=$(curl --silent --show-error --max-time 25 --output health-response.json --write-out "%{http_code}" \
             -X POST "https://fuellog-ai.sejyta.workers.dev/health" \
             -H "Authorization: Bearer $FUELLOG_APP_TOKEN" \
             -H "Origin: https://sejyta-main.github.io")
