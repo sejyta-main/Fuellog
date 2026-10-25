@@ -5,7 +5,7 @@ import { handleRequest, modelCandidates, normalizeMeal } from "../worker/index.j
 const env = {
   APP_TOKEN: "test-access-code",
   GEMINI_API_KEY: "test-gemini-key",
-  GEMINI_MODEL: "gemini-3.8-flash",
+  GEMINI_MODEL: "gemini-3.6-flash",
   ALLOWED_ORIGIN: "https://sejyta-main.github.io"
 };
 
@@ -46,8 +46,8 @@ test("normalizes and caps nutrition values", () => {
 });
 
 test("uses Flash-Lite for chat and keeps meal fallbacks", () => {
-  assert.deepEqual(modelCandidates({}, "chat"), ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash"]);
-  assert.deepEqual(modelCandidates({}, "meal"), ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]);
+  assert.deepEqual(modelCandidates({}, "chat"), ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash"]);
+  assert.deepEqual(modelCandidates({}, "meal"), ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]);
   assert.equal(modelCandidates({ GEMINI_CHAT_MODEL: "custom-chat" }, "chat")[0], "custom-chat");
 });
 

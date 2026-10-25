@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 
 // Redeploy marker: refresh encrypted runtime secrets.
 
-const DEFAULT_MODEL = "gemini-3.8-flash";
+const DEFAULT_MODEL = "gemini-3.6-flash";
 const DEFAULT_CHAT_MODEL = "gemini-3.5-flash-lite";
 const LITE_FALLBACK_MODEL = "gemini-3.1-flash-lite";
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
