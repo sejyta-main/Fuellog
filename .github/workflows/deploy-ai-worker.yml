@@ -35,3 +35,19 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           APP_TOKEN: ${{ secrets.FUELLOG_APP_TOKEN }}
+      - name: Smoke test live AI Worker
+        env:
+          FUELLOG_APP_TOKEN: ${{ secrets.FUELLOG_APP_TOKEN }}
+        run: |
+          set +e
+          HTTP_CODE=$(curl --silent --show-error --output health-response.json --write-out "%{http_code}" \
+            -X POST "https://fuellog-ai.sejyta.workers.dev/health" \
+            -H "Authorization: Bearer $FUELLOG_APP_TOKEN" \
+            -H "Origin: https://sejyta-main.github.io")
+          CURL_EXIT=$?
+          echo "HTTP $HTTP_CODE"
+          cat health-response.json || true
+          echo
+          if [ "$CURL_EXIT" -ne 0 ] || [ "$HTTP_CODE" != "200" ]; then
+            exit 1
+          fi
