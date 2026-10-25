@@ -127,9 +127,9 @@ test("returns a grounded chat answer", async () => {
     message: "What should I eat to reach protein?",
     history: [{ role: "user", content: "Keep it practical" }],
     context: {
-      targets: { kcal: 2250, protein: 180, carbs: 240, fat: 70 },
+      targets: { kcal: 2000, protein: 150, carbs: 200, fat: 65 },
       today: [{ name: "Breakfast", kcal: 450, p: 30, c: 50, f: 12 }],
-      recent: [{ date: "2026-09-19", kcal: 2100, p: 170, c: 220, f: 65 }]
+      recent: [{ date: "2026-01-01", kcal: 1950, p: 145, c: 190, f: 60 }]
     }
   }), env, { chat: async body => { received = body; return "Add a gluten-free yogurt and whey bowl."; } });
   const result = await response.json();
