@@ -111,7 +111,7 @@
   <header>
     <div class="brand">
       <div class="logo">FUEL<span>LOG</span></div>
-      <div class="sub" id="subline">79 KG · ~20% BF · TARGET 15–17%</div>
+      <div class="sub" id="subline">LOCAL PROGRESS · PRIVATE DATA</div>
     </div>
     <nav class="tabs">
       <button id="tabToday" class="on">Today</button>
@@ -379,7 +379,7 @@
       </div>
     </div>
     <div class="card" data-progress-panel="summary">
-      <div class="h">TREND → 15–17% BF</div>
+      <div class="h">PROGRESS TREND</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
         <div class="stat"><div class="v" id="tNow">—</div><div class="l">TREND</div></div>
         <div class="stat"><div class="v" id="tRate">—</div><div class="l">RATE/WK</div></div>
@@ -428,7 +428,7 @@
         <div id="streak" style="font-size:13px;font-weight:700;color:var(--orange)"></div>
       </div>
       <div id="weekList"></div>
-      <p class="tiny">Consistency beats perfection — 6 solid days a week reaches 15–17% in roughly 10–14 weeks.</p>
+      <p class="tiny">Consistency beats perfection — use the weekly trend instead of reacting to single-day changes.</p>
     </div>
   </div>
 
@@ -440,7 +440,7 @@
       <form id="calorieTargetForm" style="margin-top:14px;text-align:left">
         <label for="calorieTarget" class="muted" style="display:block;font-weight:700;margin-bottom:6px">Daily calorie target (kcal)</label>
         <div class="row">
-          <input id="calorieTarget" type="number" inputmode="numeric" min="1" max="20000" step="1" required value="2100" style="flex:1;min-width:0">
+          <input id="calorieTarget" type="number" inputmode="numeric" min="1" max="20000" step="1" required value="2000" style="flex:1;min-width:0">
           <button class="btn" type="submit">Save target</button>
         </div>
         <div id="calorieTargetHistoryNote" class="tiny" style="margin-top:7px"></div>
@@ -448,12 +448,20 @@
       <form id="macroTargetForm" style="margin-top:16px;text-align:left;border-top:1px solid var(--line);padding-top:14px">
         <div class="muted" style="display:block;font-weight:700;margin-bottom:8px">Daily macro targets (g)</div>
         <div class="row" style="gap:8px">
-          <label class="tiny" style="flex:1">Protein<input id="proteinTarget" type="number" inputmode="numeric" min="1" max="500" step="1" required value="180" style="width:100%;margin-top:4px"></label>
-          <label class="tiny" style="flex:1">Carbs<input id="carbsTarget" type="number" inputmode="numeric" min="1" max="800" step="1" required value="190" style="width:100%;margin-top:4px"></label>
-          <label class="tiny" style="flex:1">Fat<input id="fatTarget" type="number" inputmode="numeric" min="1" max="300" step="1" required value="70" style="width:100%;margin-top:4px"></label>
+          <label class="tiny" style="flex:1">Protein<input id="proteinTarget" type="number" inputmode="numeric" min="1" max="500" step="1" required value="150" style="width:100%;margin-top:4px"></label>
+          <label class="tiny" style="flex:1">Carbs<input id="carbsTarget" type="number" inputmode="numeric" min="1" max="800" step="1" required value="200" style="width:100%;margin-top:4px"></label>
+          <label class="tiny" style="flex:1">Fat<input id="fatTarget" type="number" inputmode="numeric" min="1" max="300" step="1" required value="65" style="width:100%;margin-top:4px"></label>
         </div>
         <button class="btn full" type="submit" style="margin-top:10px">Save macro targets</button>
         <div id="macroTargetHistoryNote" class="tiny" style="margin-top:7px"></div>
+      </form>
+      <form id="bodyFatGoalForm" style="margin-top:16px;text-align:left;border-top:1px solid var(--line);padding-top:14px">
+        <label for="targetBFGoal" class="muted" style="display:block;font-weight:700;margin-bottom:6px">Body-fat goal (%)</label>
+        <div class="row">
+          <input id="targetBFGoal" type="number" inputmode="decimal" min="5" max="40" step="0.1" placeholder="e.g. 18" style="flex:1;min-width:0">
+          <button class="btn" type="submit">Save goal</button>
+        </div>
+        <p class="tiny" style="margin-bottom:0">Stored only on this device. Leave empty and save to remove the goal.</p>
       </form>
     </div>
     <div class="card">
@@ -467,9 +475,7 @@
 <script>
 "use strict";
 // ── constants ────────────────────────────────────────────────
-const T = { kcal:2100, protein:180, carbs:190, fat:70 };
-const START_W=79, LEAN=START_W*0.8, TARGET_BF=0.16;
-const TARGET_W=+(LEAN/(1-TARGET_BF)).toFixed(1);
+const T = { kcal:2000, protein:150, carbs:200, fat:65 };
 const QUICK_HISTORY_DAYS=120, MAX_QUICKS=500, PORTION_QUICK_LIMIT=20;
 
 // Per-100g unless unit noted. USDA-based.
@@ -542,13 +548,7 @@ const FOODS = [
   {n:"Honey", u:"tbsp", per:1, kcal:64,p:0,c:17.3,f:0,sf:0},
   {n:"Dark chocolate 85%, 1 square (~10g)", u:"unit", per:1, kcal:60,p:1,c:3.5,f:4.5,sf:2.8},
 ];
-const SEED_FAVS = [
-  {name:"Post-workout shake",kcal:420,p:45,c:32,f:12},
-  {name:"Yogurt + whey bowl",kcal:240,p:30,c:15,f:5},
-  {name:"Chicken + sweet potato",kcal:520,p:45,c:45,f:15},
-  {name:"3 eggs + mozzarella",kcal:330,p:27,c:2,f:24},
-  {name:"Cappuccino (GF milk)",kcal:60,p:2,c:8,f:2},
-];
+const SEED_FAVS = [];
 
 // ── storage (localStorage) ───────────────────────────────────
 const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -559,7 +559,6 @@ const save = (k,v) => { try{ localStorage.setItem(k,JSON.stringify(v)); }catch{ 
 const storedCalorieTarget = load("fl:calorieTarget", null);
 if(Number.isInteger(storedCalorieTarget) && storedCalorieTarget > 0 && storedCalorieTarget <= 20000) T.kcal = storedCalorieTarget;
 
-const LEGACY_CALORIE_TARGET=2250;
 let calorieTargetHistory=load("fl:calorieTargetHistory",[]);
 function earliestLoggedDate(){
   const keys=Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).sort();
@@ -577,13 +576,7 @@ function normalizeCalorieTargetHistory(rows){
 }
 calorieTargetHistory=normalizeCalorieTargetHistory(calorieTargetHistory);
 if(!calorieTargetHistory.length){
-  const first=earliestLoggedDate();
-  // One-time migration for the target change made on 2026-10-01.
-  if(T.kcal===2100 && first<"2026-10-01"){
-    calorieTargetHistory=[{date:first,kcal:LEGACY_CALORIE_TARGET},{date:"2026-10-01",kcal:2100}];
-  }else{
-    calorieTargetHistory=[{date:first,kcal:T.kcal}];
-  }
+  calorieTargetHistory=[{date:earliestLoggedDate(),kcal:T.kcal}];
   save("fl:calorieTargetHistory",calorieTargetHistory);
 }
 function calorieTargetForDate(date){
@@ -611,7 +604,6 @@ if(storedMacroTargets && Number.isInteger(+storedMacroTargets.protein) && Number
   T.carbs=+storedMacroTargets.carbs;
   T.fat=+storedMacroTargets.fat;
 }
-const LEGACY_MACRO_TARGETS={protein:180,carbs:240,fat:70};
 let macroTargetHistory=load("fl:macroTargetHistory",[]);
 function normalizeMacroTargetHistory(rows){
   const byDate=new Map();
@@ -630,15 +622,7 @@ function normalizeMacroTargetHistory(rows){
 }
 macroTargetHistory=normalizeMacroTargetHistory(macroTargetHistory);
 if(!macroTargetHistory.length){
-  const first=earliestLoggedDate();
-  if(T.protein===180 && T.carbs===190 && T.fat===70 && first<"2026-10-02"){
-    macroTargetHistory=[
-      {date:first,...LEGACY_MACRO_TARGETS},
-      {date:"2026-10-02",protein:180,carbs:190,fat:70}
-    ];
-  }else{
-    macroTargetHistory=[{date:first,protein:T.protein,carbs:T.carbs,fat:T.fat}];
-  }
+  macroTargetHistory=[{date:earliestLoggedDate(),protein:T.protein,carbs:T.carbs,fat:T.fat}];
   save("fl:macroTargetHistory",macroTargetHistory);
 }
 function macroTargetsForDate(date){
@@ -665,6 +649,21 @@ let meals = load(KV(),[]);
 let favs = load("fl:favs",SEED_FAVS);
 let weights = load("fl:weights",[]);
 let measurements = load("fl:measurements",[]);
+let targetBFPct=Number(load("fl:targetBFPct",null));
+if(!Number.isFinite(targetBFPct)||targetBFPct<5||targetBFPct>40) targetBFPct=null;
+function sortedWeightRows(){ return [...weights].sort((a,b)=>String(a.date).localeCompare(String(b.date))); }
+function startingReferenceWeight(){
+  const rows=sortedWeightRows();
+  return rows.length?+rows[0].kg:null;
+}
+function referenceLeanMass(){
+  const row=sortedWeightRows().find(w=>w.bf!=null&&w.bf!==""&&Number.isFinite(+w.bf)&&+w.bf>2&&+w.bf<60);
+  return row?+(+row.kg*(1-(+row.bf/100))).toFixed(3):null;
+}
+function targetWeight(){
+  const lean=referenceLeanMass();
+  return lean!=null&&targetBFPct!=null?+(lean/(1-targetBFPct/100)).toFixed(1):null;
+}
 let build = [];
 let pending = null;
 let editingId = null;
@@ -704,8 +703,7 @@ function nextMealSuggestions(rem, nowH){
   const seen={}, cands=[];
   Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).sort().reverse().slice(0,QUICK_HISTORY_DAYS).forEach(k=>{
     load(k,[]).forEach(m=>{
-      if(m.gluten && m.gluten!=="none") return;               // never suggest gluten-flagged
-      const h=parseHour(m.time); if(h==null||!(+m.p>0)) return;
+const h=parseHour(m.time); if(h==null||!(+m.p>0)) return;
       const key=String(m.name).toLowerCase().trim();
       if(!seen[key]){ seen[key]={name:m.name,kcal:+m.kcal||0,p:+m.p||0,c:+m.c||0,f:+m.f||0,hours:[h]}; cands.push(seen[key]); }
       else seen[key].hours.push(h);
@@ -741,7 +739,7 @@ function renderToday(){
   $("logTitle").textContent = isToday ? "TODAY'S LOG" : "LOG — "+viewDate.slice(5);
   $("dNext").disabled=isToday; $("dNext").style.opacity=isToday?0.4:1;
   const gl = meals.filter(m=>m.gluten && m.gluten!=="none");
-  if(gl.length) fl.push(["red","Gluten check: "+gl.map(m=>esc(m.name)).join(", ")+". Verify labels — you are strictly gluten-free."]);
+  if(gl.length) fl.push(["amber","Gluten flag: "+gl.map(m=>esc(m.name)).join(", ")+". Verify labels if gluten is relevant to your diet."]);
   const frac=Math.min(Math.max((h-6)/15,0),1);
   if(isToday && frac>0.35 && s.p < dayMacroTargets.protein*frac-30){
     const rem={kcal:Math.max(dayKcalTarget-s.kcal,0), p:Math.max(dayMacroTargets.protein-s.p,0), c:Math.max(dayMacroTargets.carbs-s.c,0), f:Math.max(dayMacroTargets.fat-s.f,0)};
@@ -757,7 +755,7 @@ function renderToday(){
           </div>
           <button class="btn" data-sug="${i}" style="padding:6px 14px;font-size:12px;flex-shrink:0">Log</button>
         </div>`).join("")+
-        `</div><div class="muted" style="font-size:11px;margin-top:6px">Ranked from meals you've logged around this time · fits today's remaining budget · gluten-flagged items excluded</div>`;
+        `</div><div class="muted" style="font-size:11px;margin-top:6px">Ranked from meals you've logged around this time · fits today's remaining budget</div>`;
     } else {
       tip+=` A yogurt+whey bowl (+30g P, ~240 kcal) keeps you on pace.`;
     }
@@ -1122,7 +1120,7 @@ function estimateSatFat(name,fat){
   const key=baseMealName(name)+"|"+fat.toFixed(1);
   if(satEstCache.has(key)) return satEstCache.get(key);
   const base=baseMealName(name);
-  // 1) Carlos's own prior exact-name entries with a recorded sat-fat value.
+  // 1) Prior exact-name entries stored on this device with a recorded sat-fat value.
   const ratios=[];
   Object.keys(localStorage).filter(k=>k.startsWith("fl:log:")).forEach(k=>{
     load(k,[]).forEach(x=>{
@@ -1794,19 +1792,32 @@ function renderProgress(){
   const l7=avg(weights.slice(-7));
   const wt=robustWeightTrend(21);
   const rate=wt.rate;
-  const curW=weights.length?weights[weights.length-1].kg:START_W;
+  const curW=weights.length?+weights[weights.length-1].kg:null;
   const trendW=wt.trendKg!=null?wt.trendKg:(l7!=null?l7:curW);
-  const bf=Math.max((curW-LEAN)/curW*100,5);
-  const togo=Math.max(trendW-TARGET_W,0);
+  const lean=referenceLeanMass();
+  const targetW=targetWeight();
+  const bfEstimate=curW!=null&&lean!=null?Math.max((curW-lean)/curW*100,5):null;
+  const togo=targetW!=null&&trendW!=null?Math.max(trendW-targetW,0):null;
   const loggedBF=[...weights].reverse().find(w=>w.bf!=null&&w.bf!=="");
-  $("subline").textContent=`${curW} KG · ${loggedBF?loggedBF.bf+"% BF":"~"+bf.toFixed(0)+"% BF (est)"} · TARGET 15–17%`;
+  const sub=[];
+  if(curW!=null) sub.push(curW+" KG");
+  if(loggedBF) sub.push(loggedBF.bf+"% BF");
+  else if(bfEstimate!=null) sub.push("~"+bfEstimate.toFixed(0)+"% BF (est)");
+  if(targetBFPct!=null) sub.push("TARGET "+targetBFPct.toFixed(1).replace(/\.0$/,"")+"% BF");
+  $("subline").textContent=sub.length?sub.join(" · "):"LOCAL PROGRESS · PRIVATE DATA";
   $("tNow").textContent=trendW!=null?trendW.toFixed(1)+" kg":"—";
   $("tRate").textContent=rate!=null?(rate>0?"+":"")+rate.toFixed(2):"—";
 
   let eta="uncertain", etaNote="";
-  if(togo<=0.1){
+  if(targetBFPct==null){
+    eta="set goal";
+    etaNote="Set a body-fat goal in Settings to calculate a local goal weight and ETA.";
+  } else if(targetW==null){
+    eta="need BF";
+    etaNote="Add at least one BF% reading so FuelLog can estimate lean mass and calculate a goal weight.";
+  } else if(togo<=0.1){
     eta="reached";
-    etaNote="Goal range reached on the smoothed trend.";
+    etaNote="Goal reached on the smoothed trend.";
   } else if(rate!=null&&rate<-0.05&&wt.used>=6&&wt.spanDays>=7){
     const etaWeeks=Math.ceil(togo/-rate);
     eta=etaWeeks>52?">1 yr":"≈"+etaWeeks+" wks"+(wt.confidence==="low"?"*":"");
@@ -1817,7 +1828,9 @@ function renderProgress(){
     etaNote="ETA is temporarily uncertain until there are enough recent weigh-ins.";
   }
   $("tEta").textContent=eta;
-  $("goalLine").innerHTML=`Goal weight ≈ <b>${TARGET_W} kg</b> (${togo.toFixed(1)} kg to go from the smoothed trend).<div style="margin-top:4px">${etaNote}</div>`;
+  $("goalLine").innerHTML=targetW!=null
+    ? `Goal weight ≈ <b>${targetW} kg</b> (${togo.toFixed(1)} kg to go from the smoothed trend).<div style="margin-top:4px">${etaNote}</div>`
+    : etaNote;
 
   renderLossLine();
   renderCharts();
@@ -2330,16 +2343,17 @@ function renderCharts(){
   } else {
     const sm=pts.map((p,i)=>{ const w=pts.slice(Math.max(0,i-6),i+1); return w.reduce((a,b)=>a+b.kg,0)/w.length; });
     let mn=Math.min(...pts.map(p=>p.kg),...sm), mx=Math.max(...pts.map(p=>p.kg),...sm);
-    const showGoal=TARGET_W>mn-1.5 && TARGET_W<mx+1.5;
-    if(showGoal){ mn=Math.min(mn,TARGET_W); mx=Math.max(mx,TARGET_W); }
+    const chartGoal=targetWeight();
+    const showGoal=chartGoal!=null&&chartGoal>mn-1.5&&chartGoal<mx+1.5;
+    if(showGoal){ mn=Math.min(mn,chartGoal); mx=Math.max(mx,chartGoal); }
     mn-=0.3; mx+=0.3;
     const X=i=>(i/(pts.length-1))*300, Y=v=>110-((v-mn)/(mx-mn))*98-6;
     let s="";
-    if(showGoal) s+=`<line x1="0" y1="${Y(TARGET_W).toFixed(1)}" x2="300" y2="${Y(TARGET_W).toFixed(1)}" stroke="var(--green)" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.7"/>`;
+    if(showGoal) s+=`<line x1="0" y1="${Y(chartGoal).toFixed(1)}" x2="300" y2="${Y(chartGoal).toFixed(1)}" stroke="var(--green)" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.7"/>`;
     pts.forEach((p,i)=>{ s+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(p.kg).toFixed(1)}" r="2.6" fill="#9AA6C0"/>`; });
     s+=`<path d="${sm.map((v,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round"/>`;
     svg.innerHTML=s;
-    $("chWcap").textContent=`Dots = scale · Blue line = trend (what matters) · ${pts[0].date.slice(5)} → ${pts[pts.length-1].date.slice(5)}`+(showGoal?` · dashed = goal ${TARGET_W} kg`:"");
+    $("chWcap").textContent=`Dots = scale · Blue line = trend (what matters) · ${pts[0].date.slice(5)} → ${pts[pts.length-1].date.slice(5)}`+(showGoal?` · dashed = goal ${chartGoal} kg`:"");
   }
   // Body fat: noisy scale readings as dots + 5-reading smoothed trend
   const bfPts=weights.filter(w=>w.bf!=null&&w.bf!=="").slice(-30);
@@ -2420,15 +2434,17 @@ async function exportCSV(){
     add({type:"TARGET_HISTORY",date:x.date,name:"Daily fat target",fat_target_g:x.fat,target_name:"Daily fat",target_value:x.fat,target_unit:"g",details:"effective from this date"});
   });
 
-  [
+  const exportTargets=[
     ["Daily calories (current)",T.kcal,"kcal"],
     ["Daily protein",T.protein,"g"],
     ["Daily carbs",T.carbs,"g"],
-    ["Daily fat",T.fat,"g"],
-    ["Goal weight",TARGET_W,"kg"],
-    ["Body-fat target","15–17","%"],
-    ["Starting reference weight",START_W,"kg"]
-  ].forEach(x=>add({type:"TARGET",name:x[0],target_name:x[0],target_value:x[1],target_unit:x[2]}));
+    ["Daily fat",T.fat,"g"]
+  ];
+  const exportGoalWeight=targetWeight(), exportStartWeight=startingReferenceWeight();
+  if(targetBFPct!=null) exportTargets.push(["Body-fat target",targetBFPct,"%"]);
+  if(exportGoalWeight!=null) exportTargets.push(["Goal weight",exportGoalWeight,"kg"]);
+  if(exportStartWeight!=null) exportTargets.push(["Starting reference weight",exportStartWeight,"kg"]);
+  exportTargets.forEach(x=>add({type:"TARGET",name:x[0],target_name:x[0],target_value:x[1],target_unit:x[2]}));
 
   favs.forEach(f=>{
     const si=satInfo(f), last=f.t?new Date(f.t).toISOString():"";
@@ -2466,10 +2482,11 @@ function renderSettings(){
   $("proteinTarget").value=T.protein;
   $("carbsTarget").value=T.carbs;
   $("fatTarget").value=T.fat;
+  $("targetBFGoal").value=targetBFPct!=null?targetBFPct:"";
   renderCalorieTargetHistoryNote();
   renderMacroTargetHistoryNote();
   const el=$("settingsCurrentTargets");
-  if(el) el.textContent=`${T.kcal.toLocaleString()} kcal · ${T.protein}g protein · ${T.carbs}g carbs · ${T.fat}g fat`;
+  if(el) el.textContent=`${T.kcal.toLocaleString()} kcal · ${T.protein}g protein · ${T.carbs}g carbs · ${T.fat}g fat`+(targetBFPct!=null?` · BF goal ${targetBFPct}%`:"");
 }
 function showTab(t){
   const today=t==="today", prog=t==="prog", settings=t==="settings";
@@ -2494,6 +2511,7 @@ $("calorieTarget").value=T.kcal;
 $("proteinTarget").value=T.protein;
 $("carbsTarget").value=T.carbs;
 $("fatTarget").value=T.fat;
+$("targetBFGoal").value=targetBFPct!=null?targetBFPct:"";
 $("calorieTargetForm").addEventListener("submit",e=>{
   e.preventDefault();
   const value=Number($("calorieTarget").value);
@@ -2521,6 +2539,23 @@ $("macroTargetForm").addEventListener("submit",e=>{
   renderMacroTargetHistoryNote();
   renderToday(); renderProgress(); renderSettings();
   toast("Macro targets saved from today");
+});
+$("bodyFatGoalForm").addEventListener("submit",e=>{
+  e.preventDefault();
+  const raw=$("targetBFGoal").value.trim();
+  if(!raw){
+    targetBFPct=null;
+    localStorage.removeItem("fl:targetBFPct");
+    renderProgress(); renderSettings();
+    toast("Body-fat goal removed");
+    return;
+  }
+  const value=Number(raw);
+  if(!Number.isFinite(value)||value<5||value>40){ toast("Enter a body-fat goal between 5% and 40%"); return; }
+  targetBFPct=Math.round(value*10)/10;
+  save("fl:targetBFPct",targetBFPct);
+  renderProgress(); renderSettings();
+  toast("Body-fat goal saved on this device");
 });
 
 // init
