@@ -108,8 +108,16 @@ export function modelCandidates(env = {}, purpose = "meal") {
   return [...new Set([preferred, ...fallbacks].filter(Boolean))];
 }
 
-function canFallbackModel(error) {
+export function canFallbackModel(error) {
+  if(error?.code==="INVALID_MODEL_RESPONSE") return true;
   return new Set([404, 429, 500, 502, 503, 504]).has(Number(error?.status || error?.statusCode || 0));
+}
+
+function invalidModelResponse(cause) {
+  const error = new Error("Invalid AI response from Gemini model");
+  error.code = "INVALID_MODEL_RESPONSE";
+  error.cause = cause;
+  return error;
 }
 
 async function runWithModelFallback(env, purpose, run) {
@@ -252,15 +260,22 @@ async function callGemini(body, env) {
       model,
       input,
       system_instruction: SYSTEM_PROMPT,
-      generation_config: { temperature: 0.2 },
+      generation_config: { temperature: 0 },
       response_format: { type: "text", mime_type: "application/json", schema: MEAL_SCHEMA },
       store: false
     }, {
       timeout_ms: 35_000,
       retries: { strategy: "none" }
     });
-    if (!interaction.output_text) throw new Error("AI returned no text");
-    return interaction.output_text;
+    if (!interaction.output_text) throw invalidModelResponse(new Error("AI returned no text"));
+    try {
+      // Validate inside the per-model attempt. If a model violates the structured
+      // nutrition schema, runWithModelFallback can immediately try the next model
+      // instead of sending the same broken payload back to the user.
+      return JSON.stringify(normalizeMeal(decodeJson(interaction.output_text)));
+    } catch (error) {
+      throw invalidModelResponse(error);
+    }
   });
 }
 
@@ -391,7 +406,7 @@ export async function handleRequest(request, env, deps = {}) {
   } catch (error) {
     const status = errorStatus(error);
     const timeout = error?.name === "AbortError" || error?.name === "RequestTimeoutError";
-    const invalid = error instanceof SyntaxError || /AI response|AI returned|Invalid /.test(error?.message || "");
+    const invalid = error?.code === "INVALID_MODEL_RESPONSE" || error instanceof SyntaxError || /AI response|AI returned|Invalid /.test(error?.message || "");
     return errorResponse(
       request, env,
       status === 429 ? 429 : timeout ? 504 : 502,
