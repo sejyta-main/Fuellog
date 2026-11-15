@@ -57,8 +57,8 @@
   .abtn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:10px 4px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit}
   .abtn.on{background:var(--ink);color:#fff;border-color:var(--ink)}
   .abtn .ico{font-size:19px}
-  input,select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;color:var(--ink);background:#FBFCFE;font-family:inherit}
-  input:focus-visible,button:focus-visible,select:focus-visible{outline:3px solid #2456C855;outline-offset:2px}
+  input,select,textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;color:var(--ink);background:#FBFCFE;font-family:inherit}
+  input:focus-visible,button:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #2456C855;outline-offset:2px}
   .btn{background:var(--orange);color:#fff;border:none;border-radius:10px;padding:12px 16px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
   .btn.ghost{background:transparent;color:var(--ink-soft);border:1.5px solid var(--line)}
   .btn.full{width:100%}
@@ -224,6 +224,15 @@
 
     <!-- MANUAL -->
     <div class="card hidden" id="panelManual">
+      <div style="background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px">
+        <label for="macroPaste" style="display:block;font-size:13px;font-weight:700;margin-bottom:6px">📋 Paste macros from ChatGPT</label>
+        <textarea id="macroPaste" rows="3" style="resize:vertical;font-size:13px;line-height:1.5" placeholder="Salmon: 500 kcal | 36 g protein | 34 g carbs | 24 g fat" aria-label="Paste meal and macros"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button class="btn ghost" id="macroPasteClipboard" type="button" style="flex:1">📋 Paste clipboard</button>
+          <button class="btn" id="macroPasteFill" type="button" style="flex:1">Fill fields</button>
+        </div>
+        <div class="tiny" id="macroPasteStatus" role="status" aria-live="polite" style="margin-top:7px">Paste a meal and tap Fill fields, or use Paste clipboard. Review before logging. Works offline; no AI credits needed.</div>
+      </div>
       <input id="mName" placeholder="Meal name" style="margin-bottom:8px">
       <div class="grid4">
         <div class="mcell"><input id="mKcal" type="number" inputmode="numeric" aria-label="kcal"><div class="mlab">KCAL</div></div>
@@ -472,6 +481,7 @@
   </div>
 </div>
 
+<script src="./macro-paste.js?v=1"></script>
 <script>
 "use strict";
 // ── constants ────────────────────────────────────────────────
@@ -1368,12 +1378,53 @@ $("buildLog").onclick=()=>{
   build=[]; $("buildName").value=""; renderBuild();
 };
 
-// ── manual ───────────────────────────────────────────────────
+// ── manual / pasted macros ──────────────────────────────────
+function fillManualFromPaste(text){
+  const result=window.FuelMacroPaste&&window.FuelMacroPaste.parse(text);
+  const status=$("macroPasteStatus");
+  if(!result||!result.ok){
+    status.style.color="var(--red)";
+    status.textContent=(result&&result.error)||"Macro paste helper did not load. Reload FuelLog and try again.";
+    return false;
+  }
+  // Never save automatically: review and explicitly press Log meal.
+  $("mName").value=result.name;
+  [["mKcal","kcal"],["mP","p"],["mC","c"],["mF","f"]].forEach(([id,key])=>$(id).value=result[key]);
+  $("mSF").value=""; // avoid carrying over saturated fat from a previous entry
+  updateManualSFHint();
+  status.style.color="var(--green)";
+  status.textContent="✓ Filled "+result.kcal+" kcal · "+result.p+" g protein · "+result.c+" g carbs · "+result.f+" g fat. Review the meal name and values, then tap Log meal.";
+  return true;
+}
+$("macroPasteFill").onclick=()=>fillManualFromPaste($("macroPaste").value);
+$("macroPaste").addEventListener("paste",()=>{
+  // Run after the browser inserts the pasted text.
+  setTimeout(()=>fillManualFromPaste($("macroPaste").value),0);
+});
+$("macroPasteClipboard").onclick=async()=>{
+  if(!navigator.clipboard||!navigator.clipboard.readText){
+    $("macroPaste").focus();
+    $("macroPasteStatus").style.color="var(--ink-soft)";
+    $("macroPasteStatus").textContent="Touch and hold in the text box, then choose Paste.";
+    return;
+  }
+  try{
+    const text=await navigator.clipboard.readText();
+    $("macroPaste").value=text;
+    fillManualFromPaste(text);
+  }catch{
+    $("macroPaste").focus();
+    $("macroPasteStatus").style.color="var(--ink-soft)";
+    $("macroPasteStatus").textContent="Clipboard access was blocked. Touch and hold in the text box and choose Paste.";
+  }
+};
 $("mLog").onclick=()=>{
   const name=$("mName").value||"Manual entry", fat=Math.max(0,+$("mF").value||0), raw=$("mSF").value.trim();
   const si=raw!=="" ? {sf:Math.max(0,Math.min(fat,+raw||0)),source:"manual value",confidence:"user"} : estimateSatFat(name,fat);
   logMeal({ name, kcal:$("mKcal").value, p:$("mP").value, c:$("mC").value, f:fat, sf:si.sf, sfSource:si.source, sfConfidence:si.confidence });
-  ["mName","mKcal","mP","mC","mF","mSF"].forEach(id=>$(id).value="");
+  ["mName","mKcal","mP","mC","mF","mSF","macroPaste"].forEach(id=>$(id).value="");
+  $("macroPasteStatus").style.color="var(--ink-soft)";
+  $("macroPasteStatus").textContent="Paste a meal and tap Fill fields, or use Paste clipboard. Review before logging.";
   updateManualSFHint();
 };
 
