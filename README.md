@@ -11,6 +11,16 @@ FuelLog is a private-first meal, macro, and progress tracker hosted on GitHub Pa
 - Complex chat uses Gemini 3.5 Flash-Lite first. Meal analysis retains Gemini 3.8 Flash for quality; both paths automatically fall back to stable Flash-Lite models on model-specific quota or availability errors.
 - The editable review screen remains mandatory because a photo cannot reveal exact weights or hidden ingredients.
 
+## Paste macros from ChatGPT (offline)
+
+In **Manual**, paste a single line such as:
+
+```
+Salmon with vegetables: 500 kcal | 36 g protein | 34 g carbs | 24 g fat
+```
+
+Spanish labels also work (`proteína`, `carbohidratos`, `grasas`), including decimal commas, and the compact `P/C/G` format. You can tap **Paste clipboard** (when your browser allows clipboard reading), or paste into the text box and press **Fill fields**. FuelLog fills the meal name, calories and macros, then lets you check and correct them before pressing **Log meal**. It never logs automatically. Parsing stays on the device and does not call Gemini or use API quota.
+
 ## Smart Quick entries
 
 - Quick entries are ranked from the previous 45 days so meals frequently logged near the current time appear first.
